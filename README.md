@@ -120,7 +120,7 @@ npx skills add bigerbigernerd/open-interview
 
 ## 题库
 
-当前 **4,796** 道题（含 35 份面经里的 523 道），来自 13 个许可证允许再分发的开源项目，每道题都保留了原始链接。题目来源：
+当前 **5,166** 道题（含 60 份面经里的 893 道），来自 18 个许可证允许再分发的开源项目，每道题都保留了原始链接。题目来源：
 
 | 来源 | 题数 | 方向 | 许可证 |
 |---|---:|---|---|
@@ -144,15 +144,20 @@ npx skills add bigerbigernerd/open-interview
 | `levels` / `difficulty` / `hot` | `campus`, `3`, `true` | 校招社招、难度 1-5、高频 |
 
 面经（一次真实面试的多轮记录）放在 `bank/experiences/`，agent 会优先按面经里的轮次结构来面。
-目前有 **35** 份面经（523 道题），都是上游作者本人的面试记录，仓库用 MIT 许可证；公司、轮次、日期、结果只取作者写明的，没写就留空：
+目前有 **60** 份面经（893 道题，中文 44 份、英文 16 份），都是上游作者本人的面试记录，仓库用 MIT 许可证；公司、轮次、日期、结果只取作者写明的，没写就留空：
 
 | 来源 | 面经 | 公司 / 方向 |
 |---|---:|---|
 | [HurleyWong/vuepress-interview-hurley](https://github.com/HurleyWong/vuepress-interview-hurley) | 13 | 字节、微信读书、阿里飞猪、微博、海康等，Android / Java 校招（上游未分轮次） |
 | [CocaineCong/Golang-Interview](https://github.com/CocaineCong/Golang-Interview) | 11 | 字节、B站、百度、滴滴、米哈游、知乎、蔚来等，Go 后端 |
+| [mayukhkchanda/react-interview-experience](https://github.com/mayukhkchanda/react-interview-experience) | 10 | Cvent、MakeMyTrip、Amdocs、Capgemini 等，React 前端社招（英文） |
+| [imrohit1997/interview_experiences](https://github.com/imrohit1997/interview_experiences) | 6 | Deloitte、Infosys、LTIMindtree、iAcuity，Java 后端，2026（英文） |
 | [Electronic-Waste/My-Job-Hunting](https://github.com/Electronic-Waste/My-Job-Hunting) | 4 | 字节基架、Intel、RisingWave、Databend，实习，带结果 |
 | [Pypy233/Interview-Collection](https://github.com/Pypy233/Interview-Collection) | 4 | 头条基础架构、蚂蚁、大摩、SAP，实习 |
 | [jx888-max/Interview-experience](https://github.com/jx888-max/Interview-experience) | 3 | 字节多模态、阿里大模型、快手算法，2025-10 日常实习 |
+| [kevin-jk/InterviewExp](https://github.com/kevin-jk/InterviewExp) | 3 | 华为、招银网络科技、蚂蚁，Java 后端社招，都拿到 offer |
+| [tumiMsaki/Interview-experience](https://github.com/tumiMsaki/Interview-experience) | 3 | 百度搜索、腾讯云、网易游戏，前端，带每轮时长 |
+| [GGboya/interview](https://github.com/GGboya/interview) | 3 | 字节抖音支付 / 国际商业化、百度，后端，2024-2025 |
 
 你自己的面经最有价值（模板：[`bank/experiences/_template.yml`](bank/experiences/_template.yml)）。
 

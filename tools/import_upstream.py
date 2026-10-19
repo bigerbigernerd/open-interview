@@ -39,13 +39,22 @@ SOURCES = {
     "cocainecong": ("CocaineCong/Golang-Interview", "MIT"),
     "pypy233": ("Pypy233/Interview-Collection", "MIT"),
     "hurley": ("HurleyWong/vuepress-interview-hurley", "MIT"),
+    "kevinjk": ("kevin-jk/InterviewExp", "MIT"),
+    "ggboya": ("GGboya/interview", "MIT"),
+    "tumimsaki": ("tumiMsaki/Interview-experience", "MIT"),
+    "mayukh": ("mayukhkchanda/react-interview-experience", "MIT"),
+    "imrohit": ("imrohit1997/interview_experiences", "MIT"),
 }
 SPARSE = ["*.md", "LICENSE*"]
+SPARSE_EXTRA = {"imrohit": ["public/*.html"]}
 OUT_DIR = {"h5bp": "h5bp", "haizlin": "haizlin", "tih": "tech-interview-handbook", "kdn251": "kdn251",
            "sdp": "system-design-primer", "supergodog": "supergodog", "misterbooo": "llm-interview-questions",
            "javaguide": "javaguide", "jx888": "jx888-max", "ewaste": "electronic-waste",
-           "cocainecong": "cocainecong", "pypy233": "pypy233", "hurley": "hurleywong"}
-EXPERIENCE_SOURCES = {"jx888", "ewaste", "cocainecong", "pypy233", "hurley"}
+           "cocainecong": "cocainecong", "pypy233": "pypy233", "hurley": "hurleywong",
+           "kevinjk": "kevin-jk", "ggboya": "ggboya", "tumimsaki": "tumimsaki", "mayukh": "mayukhkchanda",
+           "imrohit": "imrohit1997"}
+EXPERIENCE_SOURCES = {"jx888", "ewaste", "cocainecong", "pypy233", "hurley", "kevinjk", "ggboya", "tumimsaki", "mayukh",
+                      "imrohit"}
 
 
 # ---------- helpers ----------
@@ -63,7 +72,7 @@ def checkout(key, offline):
         CACHE.mkdir(parents=True, exist_ok=True)
         sh("git", "clone", "-q", "--depth", "1", "--filter=blob:none", "--sparse",
            f"https://github.com/{repo}", str(d))
-        sh("git", "sparse-checkout", "set", "--no-cone", *SPARSE, cwd=d)
+        sh("git", "sparse-checkout", "set", "--no-cone", *SPARSE, *SPARSE_EXTRA.get(key, []), cwd=d)
     elif not offline:
         sh("git", "pull", "-q", "--depth", "1", cwd=d)
     return d, sh("git", "rev-parse", "--short", "HEAD", cwd=d)
@@ -412,9 +421,9 @@ def imp_javaguide(d, sha):
 EXP_CONTEXT = re.compile(r"下面这|以下代码|如下|下列|这段代码|该代码|图中|上图|这样初始化")
 EXP_JUNK = re.compile(r"blabla|balabala|忘了|忘记了|不太记得|记不清")
 EMOJI = re.compile("[\U0001F300-\U0001FAFF☀-➿️]")
-ASIDE = re.compile(r"\s*[（(][^（）()]*(?:我|不会|没有|忘|撕出来|一模一样|提升点|咳|ˇ)[^（）()]*[)）]")
+ASIDE = re.compile(r"\s*[（(][^（）()]*(?:我|不会|没有|忘|撕出来|一模一样|提升点|咳|面试官|ˇ)[^（）()]*[)）]")
 NARRATIVE = re.compile(r"我|没接触|不会|不了解|复述|满意")
-SELF_INTRO = re.compile(r"^[^，,。？?]{0,6}自[我己]介绍(?:[，,。].{0,8})?$")
+SELF_INTRO = re.compile(r"^[^，,。？?]{0,6}自[我己]介绍(?:一?下)?(?:[，,。].{0,8})?$")
 
 
 def _w(word):  # an ASCII word inside Chinese text, where \b does not work
@@ -424,10 +433,10 @@ def _w(word):  # an ASCII word inside Chinese text, where \b does not work
 EXP_TYPES = [(t, re.compile(rx, re.I)) for t, rx in [
     ("coding", r"手撕|手写|算法题|^算法[：:]|编程题|写代码|代码题|leetcode|^写一个|^实现一个|数据结构去实现|栈实现队列"
                r"|(?:反转|翻转|合并|判断|找到).{0,8}链表|链表.{0,6}(?:反转|有环|中间节点|实现)|回文|queen|top ?k|子串|子序列"
-               r"|交替打印"),
+               r"|交替打印|[两三\d]道算法|^(?:implement|write|code a)\b|polyfill"),
     ("system-design", r"场景题|设计一个|如何设计|怎么设计|系统设计|设计数据库|10w|1w台|100G|亿级|突然多了"),
     ("hr", r"到岗|实习时长|base地|福利|待遇|薪资"),
-    ("behavioral", r"职业规划|为什么选择|为什么不做|你的优缺点|优点和缺点|最棘手|学习新技术|学习方法|自学|氛围|同事|被push"),
+    ("behavioral", r"职业规划|为什么选择(?:做|我们|这|加入|来)|为什么不做|你的优缺点|优点和缺点|最棘手|学习新技术|学习方法|自学|氛围|同事|被push"),
     ("project", r"项目|实习|简历|github|开源"),
 ]]
 EXP_TOPICS = [(t, re.compile(rx, re.I)) for t, rx in [
@@ -822,10 +831,261 @@ def imp_hurley(d, sha):
     return n
 
 
+# kevin-jk: one README「19年初社招面试回顾」(毕业2年): `## <公司>面试`, `### 一面` rounds, numbered or bulleted questions.
+# 「其余3家都拿到了对应的offer」; 头条 was a written test only.
+KJ_COMPANIES = {"华为面试": ("huawei", None), "招银科技面试": ("cmb", "招银网络科技"), "蚂蚁金服面试": ("ant-group", None)}
+KJ_ROUND_NOTES = {"招银科技面试": "4个面试官一起，一次性把所有的问题问完"}
+KJ_SKIP = re.compile(r"问我有什么问题|等hr电话")
+
+
+def first_sentence(text):
+    return exp_text(re.split(r"[。！]", text.strip())[0], first_person=False)
+
+
+def imp_kevinjk(d, sha):
+    reset_exp("kevinjk")
+    n, sections, name = 0, {}, None
+    for line in (d / "README.md").read_text(encoding="utf-8").splitlines():
+        h = re.match(r"^## (.+?)\s*$", line)
+        if h:
+            name = h.group(1) if h.group(1) in KJ_COMPANIES else None
+            if name:
+                sections[name] = []
+        elif name:
+            sections[name].append(line)
+    for name, lines in sections.items():
+        company, dept = KJ_COMPANIES[name]
+        rounds, cur = [], None
+        for line in lines:
+            h = re.match(r"^(?:### )?(一面|二面|三面|四面|HR面试?)\s*$", line)
+            m = re.match(r"^(?:\d+\.|-)\s+(.+)$", line)
+            if h:
+                cur = {"name": h.group(1).replace("HR面试", "HR面"), "questions": []}
+                rounds.append(cur)
+                continue
+            if cur is None and (m or line.strip()):
+                cur = {"name": "面试", "notes": KJ_ROUND_NOTES.get(name), "questions": []}
+                rounds.append(cur)
+            if m and not KJ_SKIP.search(m.group(1)):
+                q = exp_text(re.sub(r"这一点聊了很久。*$", "", m.group(1)))
+                if keep(q):
+                    cur["questions"].append({"q": q})
+            elif not m and line.strip() and not line.startswith(" ") and "notes" not in cur:
+                cur["notes"] = first_sentence(line)  # 「华为的二面是技术leader面试的」
+        meta = {"company": company, "role": "backend", "level": "junior", "result": "offer", "department": dept,
+                "notes": "上游：19年初社招面试回顾（毕业2年），华为 / 招银网络科技 / 蚂蚁金服都拿到 offer"}
+        n += write_exp("kevinjk", sha, "README.md", meta, rounds)
+    return n
+
+
+# GGboya: <公司>/<岗位>.md with 「**面试日期：** / **职位：** / **面试轮次：**」 headers, then `**问题：**` per question.
+GG_FILES = {"字节/抖音支付.md": ("bytedance", "抖音支付"), "字节/短视频国际商业化.md": ("bytedance", "短视频国际商业化"),
+            "百度/不知道啥岗位.md": ("baidu", None)}
+# Not imported: B 站/cdn调度.md has one question and no date / position header.
+
+
+def imp_ggboya(d, sha):
+    reset_exp("ggboya")
+    n = 0
+    for path, (company, dept) in GG_FILES.items():
+        text = (d / path).read_text(encoding="utf-8")
+        field = {k: (m.group(1).strip() if (m := re.search(rf"\*\*{k}：\*\*\s*(.+)", text)) else "")
+                 for k in ("面试日期", "职位", "面试轮次")}
+        date = re.match(r"\d{4}-\d{2}", field["面试日期"])
+        qs = [{"q": exp_text(q, first_person=False)} for q in re.findall(r"^\*\*问题：\*\*\s*(.+)$", text, re.M)]
+        rname = field["面试轮次"] if field["面试轮次"] == "技术面试" else "面试"
+        rnote = None if rname == "技术面试" else f"上游面试轮次：{field['面试轮次']}；{field['面试日期']}"
+        meta = {"company": company, "role": "backend", "level": "senior" if "高级" in field["职位"] else None,
+                "date": date.group(0) if date else None, "department": dept, "notes": f"上游职位：{field['职位']}"}
+        n += write_exp("ggboya", sha, path, meta, [{"name": rname, "notes": rnote, "questions": qs}])
+    return n
+
+
+# tumiMsaki: <公司部门>.md, `## 一面(40分钟)` rounds with `+` bullets; front-end questions (React / Vue / 小程序).
+TM_FILES = {"百度搜索.md": ("baidu", "搜索"), "腾讯云.md": ("tencent", "腾讯云"), "网易游戏.md": ("netease", "网易游戏")}
+TM_SKIP = re.compile(r"有什么要问我的|^介绍下自己$")
+
+
+def imp_tumimsaki(d, sha):
+    reset_exp("tumimsaki")
+    n = 0
+    for path, (company, dept) in TM_FILES.items():
+        rounds = []
+        for line in (d / path).read_text(encoding="utf-8").splitlines():
+            h = re.match(r"^## (.+?)\((\d+)分钟\)", line)
+            m = re.match(r"^\+ (.+)$", line)
+            if h:
+                name = "HR面" if h.group(1).lower() == "hr" else h.group(1)
+                rounds.append({"name": name, "duration": int(h.group(2)), "questions": [],
+                               "notes": "上游未列题目" if name == "HR面" else None})
+            elif m and rounds and not TM_SKIP.search(m.group(1)):
+                q = exp_text(re.sub(r"其他一堆。*", "", m.group(1)))
+                if keep(q):
+                    rounds[-1]["questions"].append({"q": q})
+        meta = {"company": company, "role": "frontend", "department": dept}
+        n += write_exp("tumimsaki", sha, path, meta, rounds)
+    return n
+
+
+# mayukhkchanda: <Company>/README.md — `## Role - …`, `## Experience - …`, a status line (Selected / Offered /
+# REJECTED), then `## Round I - …` (or 「Direct Technical Interview」…) with numbered questions under topic labels.
+MK_FILES = {"Amdocs": "amdocs", "Bold-Systems": "bold", "Capgemini": "capgemini", "Clearwater-Analytics": "clearwater",
+            "Cvent": "cvent", "Dassault-Systemes": "dassault-systemes", "Falabella": "falabella",
+            "Global-Health-Care": "ghbp", "MakeMyTrip": "makemytrip", "To-The-New": "to-the-new"}
+# Not imported: Publicis-Sapient (its round pages and README disagree on which round asked what);
+# MakeMyTrip/interview-exps-of-others.md (links to other people's posts).
+MK_ROUND = re.compile(r"(?i)^(?:round|rount)\s+([ivx]+|\d+)\b\s*(?:-\s*(.*))?$")
+MK_NAMED_ROUND = re.compile(r"(?i)^(direct technical interview|online assessment.*interview|technical round"
+                            r"|technical managerial round|managerial round)$")
+MK_SKIP = re.compile(r"(?i)introduce yourself|output|the following|below|I've|I have|^coding/design question:?$"
+                     r"|^this (?:round|was)\b|^follow up questions$|\bwhat (?:are|is)$")
+MK_ASKED = re.compile(r"(?i)^.*?\b(?:he|she|I)\s+(?:asked me|was asked|began by asking)\s+(?:about\s+)?(.+?)\.?$")
+MK_MARKS = {"✔️": " (passed)", "✅": " (passed)", "❌": " (not passed)"}
+MK_ARROW = re.compile(r"\s*➡️\s*")
+
+
+def mk_text(text):
+    text = re.sub(r"(?<![\w*])_(.+?)_(?!\w)", r"\1", text.replace("\\*", ""))
+    text = re.sub(r"https?://\S+", "", clean(text)).replace("`", "")
+    text = re.sub(r"\?\s+-\s+.*$", "?", text)  # 「…? - Using useImperativeHandle hook.」: the author's answer
+    text = re.sub(r"^[a-z]\.\s+", "", MK_ASKED.sub(r"\1", text))  # 「Then, he asked me about X.」 → X
+    return re.sub(r"\s+", " ", EMOJI.sub("", text)).strip(" :-")
+
+
+def imp_mayukh(d, sha):
+    reset_exp("mayukh")
+    n = 0
+    for folder, company in MK_FILES.items():
+        files = sorted((d / folder).glob("*README.md"))  # MakeMyTrip has README.md + ROUND-2-README.md
+        meta = {"company": company, "role": "frontend", "lang": "en"}
+        rounds, statuses = [], []
+        for f in files:
+            cur, last, base, in_code, skip, label, qtype = None, None, None, False, False, None, None
+            lines = f.read_text(encoding="utf-8").splitlines()
+            for i, line in enumerate(lines):
+                if line.strip().startswith("```"):
+                    in_code = not in_code
+                    continue
+                if in_code:
+                    continue
+                h = re.match(r"^\s*(?:-\s+|\d+\.\s+)?#{2,4}\s+(.+?)\s*$", line)
+                b = re.match(r"^\s*-\s+\*\*(.+?)\*\*\s*$", line)
+                if h:
+                    marked = h.group(1)
+                    for k, v in MK_MARKS.items():
+                        marked = marked.replace(k, v)
+                    text = mk_text(MK_ARROW.sub(" → ", marked))
+                    role = re.match(r"(?i)role\s*-\s*(.+)", text)
+                    exp = re.match(r"(?i)experience\s*-\s*(.+)", text)
+                    rm, nm = MK_ROUND.match(text), MK_NAMED_ROUND.match(text)
+                    if role:
+                        meta["notes"] = f"Upstream role: {role.group(1)}"
+                    elif exp:
+                        years = int(re.match(r"\d+", exp.group(1)).group(0))
+                        meta["level"] = "junior" if years < 3 else "mid"
+                        meta["notes"] += f"; experience: {exp.group(1)}"
+                    elif rm or nm:
+                        name = f"Round {rm.group(1)}" if rm else text
+                        rest = (rm.group(2) or "") if rm else ""
+                        dur = re.search(r"(\d+)\s*(hour|min)", rest, re.I)
+                        cur = {"name": name, "questions": [], "notes": rest or None,
+                               "duration": int(dur.group(1)) * (60 if dur.group(2).lower() == "hour" else 1) if dur else None}
+                        rounds.append(cur)
+                        last, base, skip = None, None, False
+                    elif cur is None and re.search(r"(?i)selected|offered|rejected|round", text):
+                        statuses.append(text)  # 「Technical Round I & II - SELECTED」
+                    else:  # a topic label
+                        skip, base, last = "output" in text.lower(), None, None
+                        qtype = ("behavioral" if "general" in text.lower() else
+                                 "coding" if "coding" in text.lower() else None)
+                    continue
+                if b:
+                    skip, base, last, label = "output" in b.group(1).lower(), None, None, None
+                    qtype = "coding" if "coding" in b.group(1).lower() else None
+                    continue
+                if cur is None or skip:
+                    continue
+                m = re.match(r"^(\s*)(\d+\.|-)\s+(.+)$", line)
+                if not m:
+                    continue
+                indent, marker, raw = len(m.group(1)), m.group(2), m.group(3)
+                if marker != "-" and (base is None or indent <= base):
+                    base, label = indent, None
+                    parts = re.split(r"\s*Follow Up:\s*", mk_text(raw))
+                    q = parts[0]
+                    if q.endswith(":") or re.fullmatch(r"(?i)(coding|puzzle) question", q):
+                        last, label = None, q.rstrip(":")  # 「Puzzle question:」 — the problems are the bullets below
+                    elif q and not MK_SKIP.search(q):
+                        last = {"q": q, "followups": parts[1:], **({"type": qtype} if qtype else {})}
+                        cur["questions"].append(last)
+                    else:
+                        last = None
+                elif marker == "-" and base is not None and indent > base:
+                    t = mk_text(raw)
+                    if label and t and not re.match(r"(?i)my approach", t) and not t.endswith(","):
+                        cur["questions"].append({"q": f"{label}: {t}"})
+                    elif last and t.endswith("?") and not MK_SKIP.search(t):
+                        last["followups"].append(t)
+        status = "; ".join(statuses)
+        meta["result"] = ("offer" if re.search(r"(?i)offered", status) else
+                          "rejected" if re.search(r"(?i)rejected|not passed", status) else None)
+        meta["notes"] = f"{meta.get('notes', '')}; {status}".strip("; ")
+        path = f"{folder}/README.md" if len(files) == 1 else folder
+        n += write_exp("mayukh", sha, path, meta, rounds)
+    return n
+
+
+# imrohit1997: public/<company>.html, a dated log of the author's own rounds (index: public/interview.html);
+# `<div class="question">N. …</div>` per question, followed by the author's answer.
+IR_FILES = {  # file: (experience key, round name, company, role, level)
+    "deloitte.html": ("deloitte", "Round 1", "deloitte", "backend", None),
+    "deloitte_r2.html": ("deloitte", "Round 2", "deloitte", "backend", None),
+    "fullstack_deloitte.html": ("deloitte-fullstack", "Interview", "deloitte", "fullstack", "senior"),  # 「Senior Full Stack」
+    "infosys_ai.html": ("infosys-ai", "AI Round", "infosys", "backend", None),
+    "infosys.html": ("infosys", "Round 1", "infosys", "backend", None),
+    "ltm_ai.html": ("ltm", "AI Round", "ltimindtree", "backend", None),  # index: 「LTM AI Round」
+    "iAcuity.html": ("iacuity", "Interview", "iacuity", "backend", None),
+}
+
+
+def imp_imrohit(d, sha):
+    from datetime import datetime
+    reset_exp("imrohit")
+    groups = {}
+    for fname, (key, rname, company, role, level) in IR_FILES.items():
+        page = (d / "public" / fname).read_text(encoding="utf-8")
+        plain = html.unescape(re.sub(r"<[^>]+>", " ", page))
+        date = re.search(r"Date:\s*([A-Z][a-z]+ \d{1,2}, \d{4})", plain)
+        day = datetime.strptime(date.group(1), "%B %d, %Y").date() if date else None
+        dur = re.search(r"Duration:\s*~?(\d+) minutes", plain)
+        qs = []
+        for raw in re.findall(r'<div class="question">(.*?)</div>', page, re.S):
+            q = html.unescape(re.sub(r"<[^>]+>", "", raw))
+            q = re.sub(r"\s*\(\d{2}:\d{2}:\d{2}(?:\s*[-–]\s*\d{2}:\d{2}:\d{2})?\)\s*$", "", re.sub(r"^\s*\d+\.\s*", "", clean(q)))
+            if q and not re.fullmatch(r"(?i)(?:good day\. )?(?:welcome to the interview\. )?(?:can|could) you (?:please )?"
+                                      r"introduce yourself\??", q):
+                qs.append({"q": q})
+        g = groups.setdefault(key, {"meta": {"company": company, "role": role, "level": level, "lang": "en"},
+                                    "rounds": [], "days": []})
+        g["rounds"].append({"name": rname, "duration": int(dur.group(1)) if dur else None,
+                            "notes": day.isoformat() if day else None, "questions": qs, "file": fname})
+        g["days"].append(day)
+    n = 0
+    for key, g in groups.items():
+        days = [x for x in g["days"] if x]
+        g["meta"]["date"] = min(days).strftime("%Y-%m") if days else None
+        files = [r["file"] for r in g["rounds"]]
+        path = f"public/{files[0]}" if len(files) == 1 else "public"
+        n += write_exp("imrohit", sha, path, g["meta"], g["rounds"])
+    return n
+
+
 IMPORTERS = {"h5bp": imp_h5bp, "haizlin": imp_haizlin, "tih": imp_tih, "kdn251": imp_kdn251,
              "sdp": imp_sdp, "supergodog": imp_supergodog, "misterbooo": imp_misterbooo,
              "javaguide": imp_javaguide, "jx888": imp_jx888, "ewaste": imp_ewaste,
-             "cocainecong": imp_cocainecong, "pypy233": imp_pypy233, "hurley": imp_hurley}
+             "cocainecong": imp_cocainecong, "pypy233": imp_pypy233, "hurley": imp_hurley,
+             "kevinjk": imp_kevinjk, "ggboya": imp_ggboya, "tumimsaki": imp_tumimsaki, "mayukh": imp_mayukh,
+             "imrohit": imp_imrohit}
 
 
 def main():

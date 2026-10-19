@@ -15,6 +15,7 @@ companies:
   bilibili:    { name: 哔哩哔哩, en: Bilibili, aliases: [b站, B站] }
   bytedance:   { name: 字节跳动, en: ByteDance, aliases: [字节, 头条, 今日头条, 抖音, tiktok, 飞书, lark, douyin] }
   citic-bank:  { name: 中信银行, en: China CITIC Bank, aliases: [中信, 中信银行信用卡中心] }
+  cmb:         { name: 招商银行, en: China Merchants Bank, aliases: [招行, 招银, 招银网络科技, 招银科技] }
   databend:    { name: Databend, en: Databend, aliases: [datafuse] }
   deepseek:    { name: 深度求索, en: DeepSeek, aliases: [] }
   dewu:        { name: 得物, en: Dewu, aliases: [poizon] }
@@ -49,34 +50,48 @@ companies:
   zhihu:       { name: 知乎, en: Zhihu, aliases: [] }
   zhipu:       { name: 智谱, en: Zhipu AI, aliases: [智谱ai, glm] }
   # —— 海外 ——
-  adobe:          { name: Adobe, en: Adobe, aliases: [] }
-  airbnb:         { name: Airbnb, en: Airbnb, aliases: [爱彼迎] }
-  amazon:         { name: 亚马逊, en: Amazon, aliases: [aws] }
-  anthropic:      { name: Anthropic, en: Anthropic, aliases: [] }
-  apple:          { name: 苹果, en: Apple, aliases: [] }
-  bloomberg:      { name: 彭博, en: Bloomberg, aliases: [] }
-  dropbox:        { name: Dropbox, en: Dropbox, aliases: [] }
-  google:         { name: 谷歌, en: Google, aliases: [alphabet, deepmind, youtube] }
-  hired:          { name: Hired, en: Hired, aliases: [] }
-  intel:          { name: 英特尔, en: Intel, aliases: [] }
-  linkedin:       { name: 领英, en: LinkedIn, aliases: [] }
-  lyft:           { name: Lyft, en: Lyft, aliases: [] }
-  meta:           { name: Meta, en: Meta, aliases: [facebook, fb, instagram, whatsapp] }
-  microsoft:      { name: 微软, en: Microsoft, aliases: [msft, 微软亚研, msra] }
-  morgan-stanley: { name: 摩根士丹利, en: Morgan Stanley, aliases: [大摩] }
-  netflix:        { name: 奈飞, en: Netflix, aliases: [] }
-  nvidia:         { name: 英伟达, en: NVIDIA, aliases: [] }
-  openai:         { name: OpenAI, en: OpenAI, aliases: [] }
-  palantir:       { name: Palantir, en: Palantir, aliases: [] }
-  sap:            { name: SAP, en: SAP, aliases: [思爱普] }
-  slack:          { name: Slack, en: Slack, aliases: [] }
-  snap:           { name: Snap, en: Snap, aliases: [snapchat] }
-  stack-overflow: { name: Stack Overflow, en: Stack Overflow, aliases: [stackoverflow] }
-  stripe:         { name: Stripe, en: Stripe, aliases: [] }
-  twitter:        { name: X / Twitter, en: X (Twitter), aliases: [x] }
-  uber:           { name: Uber, en: Uber, aliases: [] }
-  yahoo:          { name: 雅虎, en: Yahoo, aliases: [] }
-  yelp:           { name: Yelp, en: Yelp, aliases: [] }
+  adobe:             { name: Adobe, en: Adobe, aliases: [] }
+  airbnb:            { name: Airbnb, en: Airbnb, aliases: [爱彼迎] }
+  amazon:            { name: 亚马逊, en: Amazon, aliases: [aws] }
+  amdocs:            { name: Amdocs, en: Amdocs, aliases: [] }
+  anthropic:         { name: Anthropic, en: Anthropic, aliases: [] }
+  apple:             { name: 苹果, en: Apple, aliases: [] }
+  bloomberg:         { name: 彭博, en: Bloomberg, aliases: [] }
+  bold:              { name: BOLD, en: BOLD Systems, aliases: [bold systems] }
+  capgemini:         { name: 凯捷, en: Capgemini, aliases: [] }
+  clearwater:        { name: Clearwater Analytics, en: Clearwater Analytics, aliases: [cwan] }
+  cvent:             { name: Cvent, en: Cvent, aliases: [] }
+  dassault-systemes: { name: 达索系统, en: Dassault Systèmes, aliases: [dassault, 达索] }
+  deloitte:          { name: 德勤, en: Deloitte, aliases: [] }
+  dropbox:           { name: Dropbox, en: Dropbox, aliases: [] }
+  falabella:         { name: Falabella, en: Falabella, aliases: [] }
+  ghbp:              { name: Global Healthcare Billing Partners, en: Global Healthcare Billing Partners, aliases: [global healthcare] }
+  google:            { name: 谷歌, en: Google, aliases: [alphabet, deepmind, youtube] }
+  hired:             { name: Hired, en: Hired, aliases: [] }
+  iacuity:           { name: iAcuity, en: iAcuity Fintech, aliases: [] }
+  infosys:           { name: 印孚瑟斯, en: Infosys, aliases: [] }
+  intel:             { name: 英特尔, en: Intel, aliases: [] }
+  linkedin:          { name: 领英, en: LinkedIn, aliases: [] }
+  ltimindtree:       { name: LTIMindtree, en: LTIMindtree, aliases: [ltm, lti, mindtree] }
+  lyft:              { name: Lyft, en: Lyft, aliases: [] }
+  makemytrip:        { name: MakeMyTrip, en: MakeMyTrip, aliases: [mmt, goibibo] }
+  meta:              { name: Meta, en: Meta, aliases: [facebook, fb, instagram, whatsapp] }
+  microsoft:         { name: 微软, en: Microsoft, aliases: [msft, 微软亚研, msra] }
+  morgan-stanley:    { name: 摩根士丹利, en: Morgan Stanley, aliases: [大摩] }
+  netflix:           { name: 奈飞, en: Netflix, aliases: [] }
+  nvidia:            { name: 英伟达, en: NVIDIA, aliases: [] }
+  openai:            { name: OpenAI, en: OpenAI, aliases: [] }
+  palantir:          { name: Palantir, en: Palantir, aliases: [] }
+  sap:               { name: SAP, en: SAP, aliases: [思爱普] }
+  slack:             { name: Slack, en: Slack, aliases: [] }
+  snap:              { name: Snap, en: Snap, aliases: [snapchat] }
+  stack-overflow:    { name: Stack Overflow, en: Stack Overflow, aliases: [stackoverflow] }
+  stripe:            { name: Stripe, en: Stripe, aliases: [] }
+  to-the-new:        { name: To The New, en: To The New, aliases: [ttn] }
+  twitter:           { name: X / Twitter, en: X (Twitter), aliases: [x] }
+  uber:              { name: Uber, en: Uber, aliases: [] }
+  yahoo:             { name: 雅虎, en: Yahoo, aliases: [] }
+  yelp:              { name: Yelp, en: Yelp, aliases: [] }
 
 # 岗位：parent 表示「也适用于」。按 --role backend 筛选时，也会带上标为 swe 的通用题；
 # roles 为空的题（比如行为面）对所有岗位都适用。

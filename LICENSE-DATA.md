@@ -34,9 +34,14 @@ Interview reports (面经), each the upstream author's own interviews:
 |---|---|---|
 | [CocaineCong/Golang-Interview](https://github.com/CocaineCong/Golang-Interview) | MIT | © 2022 FanOne |
 | [Electronic-Waste/My-Job-Hunting](https://github.com/Electronic-Waste/My-Job-Hunting) | MIT | © 2023 Shao Wang |
+| [GGboya/interview](https://github.com/GGboya/interview) | MIT | © 2025 GGboya |
 | [HurleyWong/vuepress-interview-hurley](https://github.com/HurleyWong/vuepress-interview-hurley) | MIT | © 2021 Hurley |
+| [imrohit1997/interview_experiences](https://github.com/imrohit1997/interview_experiences) | MIT | © 2026 imrohit1997 |
 | [jx888-max/Interview-experience](https://github.com/jx888-max/Interview-experience) | MIT | © 2025 Yi Xuan |
+| [kevin-jk/InterviewExp](https://github.com/kevin-jk/InterviewExp) | MIT | © 2019 Kevin |
+| [mayukhkchanda/react-interview-experience](https://github.com/mayukhkchanda/react-interview-experience) | MIT | © 2022 Mayukh Kanti Chanda |
 | [Pypy233/Interview-Collection](https://github.com/Pypy233/Interview-Collection) | MIT | © 2019 Yu Pan |
+| [tumiMsaki/Interview-experience](https://github.com/tumiMsaki/Interview-experience) | MIT | © 2019 Masaki |
 
 MIT and Apache-2.0 licensed material is redistributed with its notices preserved by the attribution above
 and in each generated file's header. Only question text, short follow-ups and metadata were imported (plus the one-line "30 秒回答" summaries
