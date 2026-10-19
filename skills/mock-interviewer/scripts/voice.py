@@ -6,10 +6,13 @@ candidate's spoken answer into text (SpeechRecognition, or typing as a fallback)
 
   voice.py start [--port 8765] [--no-open]   start the local server in the background, print the URL
   voice.py say "text" [--show MD]            speak without waiting (intro, transitions, feedback)
-  voice.py ask "text" [--show MD] [--timeout 240]
-                                             speak a question, block until the candidate submits,
-                                             print the answer. Exit 3 = still answering -> run `wait`.
-  voice.py wait [--timeout 240]              keep waiting for the pending answer
+  voice.py ask "text" [--show MD] [--timeout 50]
+                                             speak a question, wait for the candidate's answer and
+                                             print it. Exit 3 = still answering -> run `wait` again.
+  voice.py wait [--timeout 50]               keep waiting for the latest question's answer
+
+Waits are short on purpose (50 s) so they fit inside any agent's command timeout; agents loop on
+`wait` until the answer arrives. Keep --timeout below your agent's per-command limit.
   voice.py end [--report FILE | --text MD]   show the final report in the UI
   voice.py status | stop
 
@@ -112,7 +115,10 @@ class Bridge:
             return self.events[after:]
 
 
-def make_handler(bridge):
+def make_handler(bridge, get_routes=None, post_routes=None):
+    """get_routes / post_routes: {path: fn(query_or_body) -> json-able} for servers built on this one."""
+    get_routes, post_routes = get_routes or {}, post_routes or {}
+
     class H(BaseHTTPRequestHandler):
         server_version = "open-interview-voice/1"
 
@@ -149,6 +155,8 @@ def make_handler(bridge):
         def do_GET(self):
             u = urlparse(self.path)
             qs = {k: v[0] for k, v in parse_qs(u.query).items()}
+            if u.path in get_routes:
+                return self._json(get_routes[u.path](qs))
             if u.path == "/api/events":
                 evs = bridge.poll(int(qs.get("after", 0)), min(float(qs.get("wait", 25)), 30))
                 return self._json({"bridge": True, "events": evs, "pending": bridge.pending})
@@ -177,6 +185,8 @@ def make_handler(bridge):
                 b = self._body()
             except json.JSONDecodeError:
                 return self._json({"error": "bad json"}, 400)
+            if u.path in post_routes:
+                return self._json(post_routes[u.path](b))
             if u.path == "/api/say":
                 qid = bridge.say(b.get("text", ""), b.get("show"), bool(b.get("expect")))
                 return self._json({"id": qid})
@@ -279,7 +289,7 @@ def wait_for(qid, timeout):
     while True:
         left = deadline - time.time()
         if left <= 0:
-            print(f"[still answering] The candidate has not submitted yet. Run: voice.py wait --id {qid}")
+            print(f"[still answering] The candidate is still answering. Run again: voice.py wait --id {qid}")
             sys.exit(3)
         try:
             r = call("GET", f"/api/answer?id={qid}&wait={min(left, 60):.0f}", timeout=min(left, 60) + 10)
@@ -360,10 +370,10 @@ def main():
         p.add_argument("--show", help="markdown shown on screen but not spoken")
         p.add_argument("--show-file", help="like --show, read from a file")
         if name == "ask":
-            p.add_argument("--timeout", type=float, default=240, help="seconds before returning exit 3")
+            p.add_argument("--timeout", type=float, default=50, help="seconds before returning exit 3")
     p = sub.add_parser("wait")
     p.add_argument("--id", help="question id from the `ask` timeout message (default: the last question)")
-    p.add_argument("--timeout", type=float, default=240)
+    p.add_argument("--timeout", type=float, default=50)
     p = sub.add_parser("end")
     p.add_argument("--report", help="markdown file with the final feedback")
     p.add_argument("--text")

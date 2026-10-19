@@ -72,8 +72,11 @@ python3 scripts/voice.py ask "给你一个整数数组，返回和为 target 的
   --show $'**两数之和**\n\n输入 `nums = [2,7,11,15]`, `target = 9` → 输出 `[0,1]`'
 ```
 
-- `ask` blocks until the candidate submits (up to `--timeout`, default 240 s). Exit code 3 means they are
-  still answering: run `python3 scripts/voice.py wait`. Never treat exit 3 as an empty answer.
+- `ask` waits up to 50 s for the answer. Exit code 3 means the candidate is still talking: run
+  `python3 scripts/voice.py wait` (another 50 s) and repeat until it prints the answer. Never treat exit 3
+  as an empty answer. If your command timeout is shorter than 50 s, pass a smaller `--timeout`.
+- The bridge is a local HTTP server on 127.0.0.1. If your sandbox blocks local network access (for example
+  Codex's default workspace-write sandbox), allow these `voice.py` commands to run with network access.
 - Speak plain sentences: no markdown, code, URLs or long lists in the spoken text. Put those in `--show`
   (rendered on screen, not read aloud). Keep each spoken turn under ~60 words.
 - Answers are speech-to-text transcripts: ignore filler words and obvious recognition errors, judge content.
@@ -83,6 +86,13 @@ python3 scripts/voice.py ask "给你一个整数数组，返回和为 target 的
   chat, then `python3 scripts/voice.py stop`.
 
 If voice setup fails (no browser, remote machine, unsupported browser), continue in text mode.
+
+### Browser-only alternative
+
+Users who would rather stay in the browser can run `python3 scripts/studio.py` themselves: the page lets
+them pick a local agent CLI (Claude Code, Codex, agy, Cursor Agent, OpenCode) as the interviewer, plus
+company, role and round, and runs the whole interview there. Suggest it when the user asks for a
+"just open a page" experience; it does not need this conversation.
 
 ## 3. Report
 

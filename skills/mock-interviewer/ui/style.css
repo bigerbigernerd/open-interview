@@ -132,6 +132,28 @@ textarea .interim, .interim { color: var(--mute); }
 #log li.answer { padding-left: 10px; border-left: 2px solid var(--line-2); color: #c7d1db; }
 #log li.report .who { color: var(--ink); }
 
+/* ---------- studio setup ---------- */
+.setup {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px 16px;
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; padding: 22px 24px;
+  position: relative; overflow: hidden;
+}
+.setup::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 2px; background: linear-gradient(90deg, var(--accent), transparent); }
+.setup-head { grid-column: 1 / -1; }
+.setup-head h2 { margin: 6px 0 2px; font-size: 22px; }
+.setup label { display: flex; flex-direction: column; gap: 4px; font: 11px var(--mono); letter-spacing: .1em; color: var(--mute); min-width: 0; }
+.setup label .fine { letter-spacing: 0; }
+.setup select, .setup input[type=text] {
+  background: var(--bg); color: var(--ink); border: 1px solid var(--line-2); border-radius: 6px;
+  padding: 8px; font: 14px var(--sans); width: 100%;
+}
+.stage.setup-mode .question, .stage.setup-mode .show, .stage.setup-mode .answer, .stage.setup-mode .controls { display: none !important; }
+.setup-go { grid-column: 1 / -1; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.notice.error { border-style: solid; border-color: rgba(248, 113, 113, .5); }
+.notice.error b { color: var(--danger); }
+.notice.error p { font: 13px/1.5 var(--mono); color: var(--mute); word-break: break-word; }
+.row.start { justify-content: flex-start; }
+
 /* ---------- overlays ---------- */
 .overlay { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 16px; background: rgba(3, 5, 8, .78); backdrop-filter: blur(6px); }
 .overlay-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: 14px; padding: 28px; max-width: 520px; width: 100%; text-align: center; box-shadow: 0 30px 80px rgba(0, 0, 0, .5); }
@@ -190,6 +212,7 @@ input[type=range] { accent-color: var(--accent); }
 
 @media (max-width: 900px) {
   .room { grid-template-columns: 1fr; }
+  .setup { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 18px; }
   .log { position: static; max-height: 320px; }
 }
 @media (max-width: 600px) {

@@ -199,7 +199,16 @@ def cmd_search(data, a):
     emit(data, hits[: a.limit], a)
 
 
-def cmd_sample(data, a):
+FILTERS = dict(company=None, role=None, type=None, topic=None, level=None, lang=None, difficulty=None, hot=False,
+               text=None, source=None, n=8, mix=None, seed=None, json=False, verbose=False)
+
+
+def options(**kw):
+    """Filter namespace for callers that import this module (the studio)."""
+    return argparse.Namespace(**{**FILTERS, **kw})
+
+
+def sample(data, a):
     rng = random.Random(a.seed)
     mix = {}
     for part in split(a.mix):
@@ -220,6 +229,11 @@ def cmd_sample(data, a):
             if q["id"] not in ids:
                 ids.add(q["id"])
                 picked.append(q)
+    return picked
+
+
+def cmd_sample(data, a):
+    picked = sample(data, a)
     if not picked:
         sys.exit("no questions match; loosen the filters (try dropping --topic or --lang)")
     if a.company and any(q.get("_fill") for q in picked):
@@ -248,7 +262,7 @@ def cmd_experiences(data, a):
     for e in exps:
         n = sum(len(r["questions"]) for r in e["rounds"])
         rounds = " → ".join(r["name"] for r in e["rounds"])
-        print(f"[{e['id']}] {e['date']} {e['company']} {e['role']} {e.get('level', '')} "
+        print(f"[{e['id']}] {e.get('date', '')} {e['company']} {e['role']} {e.get('level', '')} "
               f"{e.get('result', '')} · {rounds} · {n} questions\n    {e.get('summary', '')}")
 
 
@@ -260,7 +274,7 @@ def cmd_experience(data, a):
         print(json.dumps(exp, ensure_ascii=False, indent=1))
         return
     by_id = {q["id"]: q for q in data["questions"]}
-    head = " ".join(str(exp.get(k, "")) for k in ("date", "company", "department", "role", "level", "result"))
+    head = " ".join(str(exp[k]) for k in ("date", "company", "department", "role", "level", "result") if exp.get(k))
     print(f"# {head}\n{exp.get('summary', '')}")
     for r in exp["rounds"]:
         print(f"\n## {r['name']} ({r.get('type', '')}{', ' + str(r['duration']) + ' min' if r.get('duration') else ''})")

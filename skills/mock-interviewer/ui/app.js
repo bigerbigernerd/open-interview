@@ -367,6 +367,10 @@
     if (view === 'practice' && bank) {
       pill.textContent = `题库 ${bank.counts.questions} 题`;
       pill.className = 'pill on';
+    } else if (studio) {
+      const b = studio.backends.find((x) => x.id === $('#st-backend').value);
+      pill.textContent = 'STUDIO' + (b ? ' · ' + b.name : '');
+      pill.className = 'pill on';
     } else {
       pill.textContent = connected ? 'AGENT 在线' : '未连接 agent';
       pill.className = 'pill' + (connected ? ' on' : '');
@@ -392,8 +396,31 @@
     $('#show').hidden = !ev.show;
     $('#show').innerHTML = ev.show ? md(ev.show) : '';
   }
+  function resetRoom() {
+    transcript.length = 0;
+    logEl.innerHTML = '';
+    current = null;
+    lastQuestion = null;
+    lastReport = '';
+    $('#question').innerHTML = '';
+    $('#show').hidden = true;
+    $('#answer-text').value = '';
+    $('#studio-error').hidden = true;
+    setControls(false);
+  }
   function handle(ev, replay) {
-    if (ev.kind === 'interviewer') {
+    if (ev.kind === 'reset') {
+      resetRoom();
+      hideSetup();
+      setOrb('idle', 'PREPARING');
+    } else if (ev.kind === 'system') {
+      if (ev.level === 'error') {
+        $('#studio-error-text').textContent = ev.text;
+        $('#studio-error').hidden = false;
+        setOrb('idle', 'ERROR');
+      }
+    } else if (ev.kind === 'interviewer') {
+      $('#studio-error').hidden = true;
       addLog('interviewer', ev.text, ev.show ? '[屏幕] ' + speakable(ev.show).slice(0, 120) : '');
       lastQuestion = ev;
       showQuestion(ev);
@@ -419,6 +446,7 @@
         showReport(ev.text);
         if (started) enqueue(hasCJK(ev.text) ? '面试结束了，报告已经生成。' : 'That is the end of the interview. Your report is ready.');
       }
+      if (studio) showSetup(true);
     }
   }
   async function poll() {
@@ -433,7 +461,7 @@
         for (const ev of j.events) { lastSeq = ev.seq; handle(ev, first); }
         if (first) {
           first = false;
-          if (!started) $('#start-overlay').hidden = false;
+          if (!started && (!studio || ['running', 'error'].includes(studio.state))) $('#start-overlay').hidden = false;
         }
       } catch {
         if (connected || first) { connected = false; updateStatus(); }
@@ -494,37 +522,118 @@
   $('#report-close').onclick = () => { $('#report').hidden = true; };
   $('#report-download').onclick = () => download(`interview-report-${stamp()}.md`, lastReport + '\n\n---\n\n' + transcriptMd());
 
+
+  // ---------------- studio (web-driven: a local agent CLI plays the interviewer) ----------------
+  let studio = null;
+  const ST_FIELDS = ['backend', 'model', 'company', 'role', 'level', 'round', 'lang', 'n'];
+  async function initStudio() {
+    try {
+      const r = await fetch('api/studio', { cache: 'no-store' });
+      if (!r.ok) return;
+      studio = await r.json();
+    } catch { return; }
+    if (!studio || !studio.studio) { studio = null; return; }
+    const sel = $('#st-backend');
+    sel.innerHTML = studio.backends.map((b) =>
+      `<option value="${b.id}"${b.available ? '' : ' disabled'}>${esc(b.name)}${b.available ? '' : '（未安装）'}</option>`).join('');
+    const firstOk = studio.backends.find((b) => b.available);
+    if (firstOk) sel.value = firstOk.id;
+    $('#st-round').innerHTML = studio.rounds.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join('');
+    try {
+      await ensureBank();
+      fillSelect($('#st-company'), bank.tags.companies, count('companies'));
+      fillSelect($('#st-role'), bank.tags.roles, count('roles'));
+    } catch { /* selects stay on 不限 */ }
+    const saved = store.get('studio', {});
+    for (const f of ST_FIELDS) {
+      const el = $('#st-' + f);
+      if (saved[f] != null && [...(el.options || [])].every((o) => o.value !== saved[f] || !o.disabled)) el.value = saved[f];
+    }
+    if (!firstOk) $('#st-note').textContent = '没有检测到可用的 agent CLI：安装并登录 Claude Code、Codex、agy、Cursor Agent 或 OpenCode 之一后重启 studio。';
+    $('#st-start').disabled = !firstOk;
+    $('#agent-offline').hidden = true;
+    if (['running', 'error'].includes(studio.state)) hideSetup(); else showSetup(studio.state === 'done');
+    updateStatus();
+  }
+  function showSetup(again) {
+    $('#setup-title').textContent = again ? '再来一场？' : '开一场模拟面试';
+    $('#studio-setup').hidden = false;
+    document.querySelector('.stage').classList.add('setup-mode');
+  }
+  function hideSetup() {
+    $('#studio-setup').hidden = true;
+    document.querySelector('.stage').classList.remove('setup-mode');
+  }
+  $('#st-backend').addEventListener('change', updateStatus);
+  $('#st-start').onclick = async () => {
+    const body = {};
+    for (const f of ST_FIELDS) body[f] = $('#st-' + f).value;
+    store.set('studio', body);
+    started = true;
+    $('#start-overlay').hidden = true;
+    initMicLevel();
+    if (synth) synth.speak(new SpeechSynthesisUtterance(''));
+    $('#st-start').disabled = true;
+    $('#st-note').textContent = '正在抽题、唤起面试官…';
+    try {
+      const r = await fetch('api/studio/start', { method: 'POST', headers: HDR, body: JSON.stringify(body) });
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.error || 'start failed');
+      $('#st-note').textContent = '';
+      studio.state = 'running';
+    } catch (e) {
+      $('#st-note').textContent = '启动失败：' + e.message;
+    } finally {
+      $('#st-start').disabled = false;
+    }
+  };
+  $('#st-retry').onclick = async () => {
+    $('#studio-error').hidden = true;
+    setOrb('idle', 'THINKING');
+    await fetch('api/studio/retry', { method: 'POST', headers: HDR, body: '{}' });
+  };
+  $('#st-reset').onclick = async () => {
+    await fetch('api/studio/stop', { method: 'POST', headers: HDR, body: '{}' });
+    $('#studio-error').hidden = true;
+    showSetup(false);
+  };
+
   // ---------------- practice mode ----------------
   let bank = null, pool = [], pcur = null;
   const seen = new Set();
   let history = store.get('history', []);
   const roleChain = (r) => { const out = new Set(); while (r && !out.has(r)) { out.add(r); r = bank.tags.roles[r]?.parent; } return out; };
 
+  let bankLoading = null, practiceReady = false;
+  function ensureBank() {
+    bankLoading = bankLoading || fetch('data/index.json').then((r) => r.json()).then((j) => { bank = j; return j; });
+    return bankLoading;
+  }
+  const count = (field) => {
+    const c = {};
+    for (const q of bank.questions) for (const v of (field === 'type' ? [q.type] : q[field] || [])) c[v] = (c[v] || 0) + 1;
+    return c;
+  };
+  function fillSelect(sel, vocab, counts) {
+    Object.keys(vocab).filter((k) => counts[k]).sort((a, b) => counts[b] - counts[a]).forEach((k) => {
+      const o = document.createElement('option');
+      o.value = k;
+      o.textContent = `${vocab[k].name || k} · ${counts[k]}`;
+      sel.appendChild(o);
+    });
+  }
   async function loadBank() {
-    if (bank) return;
+    if (practiceReady) return;
     try {
-      const r = await fetch('data/index.json');
-      bank = await r.json();
+      await ensureBank();
     } catch {
       $('#card-q').textContent = '题库加载失败：找不到 data/index.json（在仓库里运行 python3 tools/build.py）';
       return;
     }
-    const count = (field) => {
-      const c = {};
-      for (const q of bank.questions) for (const v of (field === 'type' ? [q.type] : q[field] || [])) c[v] = (c[v] || 0) + 1;
-      return c;
-    };
-    const fill = (sel, vocab, counts) => {
-      Object.keys(vocab).filter((k) => counts[k]).sort((a, b) => counts[b] - counts[a]).forEach((k) => {
-        const o = document.createElement('option');
-        o.value = k;
-        o.textContent = `${vocab[k].name || k} · ${counts[k]}`;
-        sel.appendChild(o);
-      });
-    };
-    fill($('#f-role'), bank.tags.roles, count('roles'));
-    fill($('#f-company'), bank.tags.companies, count('companies'));
-    fill($('#f-type'), bank.tags.types, count('type'));
+    practiceReady = true;
+    fillSelect($('#f-role'), bank.tags.roles, count('roles'));
+    fillSelect($('#f-company'), bank.tags.companies, count('companies'));
+    fillSelect($('#f-type'), bank.tags.types, count('type'));
     const saved = store.get('filters', {});
     for (const [k, v] of Object.entries(saved)) { const el = $('#f-' + k); if (el) el[el.type === 'checkbox' ? 'checked' : 'value'] = v; }
     applyFilters();
@@ -605,7 +714,7 @@
     $('#h-count').textContent = history.length;
     $('#history').innerHTML = history.slice(0, 30).map((h) => `<li><b>${esc(h.q)}</b><span>${esc(h.a)}</span></li>`).join('');
   }
-  $('#filters').addEventListener('input', () => { if (bank) applyFilters(); });
+  $('#filters').addEventListener('input', () => { if (practiceReady) applyFilters(); });
   $('#p-next').onclick = () => nextQuestion();
   $('#p-speak').onclick = () => pcur && speak(pcur.q);
   $('#p-mic').onclick = () => toggleMic($('#p-answer'));
@@ -664,5 +773,5 @@
 
   if (!synth) for (const id of ['#btn-repeat', '#p-speak', '#s-test']) $(id).title = '这个浏览器不支持朗读';
   route();
-  poll();
+  initStudio().finally(poll);
 })();
