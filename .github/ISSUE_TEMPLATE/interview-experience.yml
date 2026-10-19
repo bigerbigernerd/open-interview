@@ -1,0 +1,65 @@
+name: 提交面经 / Share an interview
+description: 不会 git 也能贡献：填表提交一次真实面试，维护者会转成 bank/experiences/ 里的文件
+title: "[面经] 公司 · 岗位 · 年月"
+labels: ["面经"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先删掉个人信息（姓名、联系方式、面试官名字、内部项目代号），不要提交签了保密协议的内容。
+        Please remove personal data and anything under NDA.
+  - type: input
+    id: company
+    attributes:
+      label: 公司 / Company
+      placeholder: 字节跳动 抖音电商
+    validations:
+      required: true
+  - type: input
+    id: role
+    attributes:
+      label: 岗位 / Role
+      placeholder: 后端开发 校招
+    validations:
+      required: true
+  - type: input
+    id: date
+    attributes:
+      label: 面试时间 / Date
+      placeholder: 2026-09
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: 结果 / Result
+      options: [还不知道 / unknown, offer, 挂了 / rejected, 流程中 / pending]
+  - type: textarea
+    id: rounds
+    attributes:
+      label: 每一轮问了什么 / Questions by round
+      description: 一轮一段，一行一道题。可以附上追问和你的感受。
+      placeholder: |
+        一面（60 分钟）
+        - 自我介绍，挑一个项目深挖
+        - Redis 为什么快？追问：大 key 怎么处理
+        - 手撕：LRU 缓存
+
+        二面
+        - 设计一个短链系统
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: 出处 / Source
+      description: 自己的面试写「本人」；转载请附原帖链接，并确认已获得作者同意或已用自己的话重写
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: 确认 / Confirm
+      options:
+        - label: 我有权分享这些内容，并同意以 CC BY-SA 4.0 授权 / I have the right to share this and license it under CC BY-SA 4.0
+          required: true
+        - label: 已删除个人信息和保密内容 / Personal data and NDA content removed
+          required: true

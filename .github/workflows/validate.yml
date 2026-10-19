@@ -1,0 +1,24 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - name: Validate question bank
+        run: python tools/build.py --check
+      - name: Build index and smoke-test the skill scripts
+        run: |
+          python tools/build.py
+          python skills/mock-interviewer/scripts/bank.py stats
+          python skills/mock-interviewer/scripts/bank.py sample --role backend -n 3 --seed 1
+          python skills/mock-interviewer/scripts/voice.py --help > /dev/null

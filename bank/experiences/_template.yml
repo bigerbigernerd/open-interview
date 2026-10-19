@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../../schema/experience.schema.json
+#
+# 面经模板：复制到 bank/experiences/<company>/<YYYY-MM>-<role>-<随便一个短名>.yml 再改。
+# 以 _ 开头的文件只做校验，不会进题库。
+#
+# 写之前请确认：
+#   - 去掉个人信息（姓名、手机号、面试官名字、内部项目代号）
+#   - 不贴签了保密协议（NDA）不让外传的题
+#   - 转载别人的面经要有对方许可，或者用自己的话重新写，并在 source.url 里附原帖链接
+
+company: bytedance        # 必须是 bank/tags.yml 里的 companies 之一
+role: backend             # bank/tags.yml 里的 roles 之一
+level: campus             # intern / campus / junior / mid / senior / staff
+date: 2026-09             # 面试时间，精确到月即可
+department: 示例部门       # 可选
+location: 示例城市         # 可选
+result: unknown           # offer / rejected / pending / unknown / withdrawn
+lang: zh
+source:
+  name: 自己的面试          # 或者原帖标题
+  author: your-github-id   # 可选
+  url: https://example.com # 可选，转载时必填
+  license: CC-BY-SA-4.0
+summary: 一句话总结这次面试的风格（比如：项目问得很细，八股偏少）
+
+rounds:
+  - name: 一面
+    type: technical       # 这一轮题目的默认题型
+    duration: 60          # 分钟，可选
+    questions:
+      - 自我介绍，挑一个最有挑战的项目讲讲     # 最简单的写法：直接写题目
+      - q: Redis 为什么快？单线程模型在什么情况下会成为瓶颈？
+        topics: [redis]
+        followups: [如果 key 很大怎么办？]
+      - q: 手撕：LRU 缓存
+        type: coding
+        topics: [algorithms]
+    notes: 面试官会顺着项目一路追问（可选）
+  - name: HR 面
+    type: hr
+    questions:
+      - 为什么选择我们公司？

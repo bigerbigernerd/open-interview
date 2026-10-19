@@ -1,0 +1,12 @@
+{
+  "name": "open-interview",
+  "description": "Open, community-tagged interview question bank with a mock-interviewer skill and a free voice interview UI",
+  "owner": { "name": "open-interview contributors" },
+  "plugins": [
+    {
+      "name": "open-interview",
+      "source": "./",
+      "description": "mock-interviewer skill: realistic mock interviews (text or voice) from 4,000+ sourced questions, filterable by company, role, round and topic"
+    }
+  ]
+}

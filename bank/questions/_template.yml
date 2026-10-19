@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=../../schema/questions.schema.json
+#
+# 题目模板：复制成 bank/questions/<topic>/<随便起名>.yml 再改。以 _ 开头的文件只校验、不进题库。
+# defaults 里的字段会套用到下面每一道题，单题可以覆盖。
+
+source:
+  name: open-interview contributors
+  license: CC-BY-SA-4.0
+
+defaults:
+  lang: zh                 # zh / en
+  type: technical          # technical / coding / system-design / behavioral / project / hr
+  roles: [backend]         # 见 bank/tags.yml；不写 = 所有岗位通用
+  topics: [redis]
+
+questions:
+  - 一句话就能写完的题目可以直接写字符串
+  - q: Redis 的持久化有哪几种方式？各自适合什么场景？
+    difficulty: 2          # 1-5，可选
+    companies: [meituan]   # 确认在这家公司被问过才写，可选
+    levels: [campus]       # 可选
+    followups:             # 面试官常见追问，可选
+      - AOF 重写期间有新写入怎么办？
+    key_points:            # 好回答应该覆盖的点，给 agent 打分用，可选
+      - RDB 快照 vs AOF 追加日志
+      - 混合持久化
+      - fork 的写时复制开销
+    url: https://example.com/source   # 出处，可选

@@ -1,0 +1,17 @@
+{
+  "name": "open-interview",
+  "version": "0.1.0",
+  "description": "Mock interviews from an open, tagged question bank: text or voice (free browser TTS/STT), graded feedback, 面经 contributions",
+  "author": {
+    "name": "open-interview contributors"
+  },
+  "license": "MIT",
+  "keywords": [
+    "interview",
+    "mock-interview",
+    "面试",
+    "面经",
+    "voice",
+    "career"
+  ]
+}

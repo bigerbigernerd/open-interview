@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Open Interview question file",
+  "description": "bank/questions/**/*.yml. Editor hints only; tools/build.py is the source of truth (it also checks tags against bank/tags.yml).",
+  "type": "object",
+  "required": ["questions"],
+  "additionalProperties": false,
+  "properties": {
+    "source": { "$ref": "#/$defs/source" },
+    "defaults": { "$ref": "#/$defs/fields" },
+    "questions": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "type": "string", "minLength": 2 },
+          { "allOf": [{ "$ref": "#/$defs/fields" }], "required": ["q"] }
+        ]
+      }
+    }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "license": { "type": "string", "examples": ["CC-BY-SA-4.0", "MIT"] },
+        "commit": { "type": "string" },
+        "author": { "type": "string" }
+      }
+    },
+    "list": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
+    "fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "q": { "type": "string", "maxLength": 600, "description": "The question as an interviewer would ask it" },
+        "lang": { "enum": ["zh", "en"] },
+        "type": { "enum": ["technical", "coding", "system-design", "behavioral", "project", "hr"] },
+        "roles": { "$ref": "#/$defs/list", "description": "Slugs from bank/tags.yml roles; empty = any role" },
+        "topics": { "$ref": "#/$defs/list" },
+        "companies": { "$ref": "#/$defs/list", "description": "Only companies where this was actually asked" },
+        "levels": { "$ref": "#/$defs/list" },
+        "difficulty": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "weight": { "type": "number", "minimum": 0, "maximum": 5, "description": "Sampling weight, default 1" },
+        "hot": { "type": "boolean", "description": "High-frequency question" },
+        "followups": { "type": "array", "items": { "type": "string" } },
+        "key_points": { "type": "array", "items": { "type": "string" }, "description": "What a strong answer covers" },
+        "answer_brief": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}
