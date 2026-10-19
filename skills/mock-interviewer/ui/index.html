@@ -162,15 +162,23 @@ python3 open-interview/skills/mock-interviewer/scripts/studio.py</pre>
   <!-- ============ Practice mode ============ -->
   <section id="view-practice" class="view" hidden>
     <div class="practice">
-      <form id="filters" class="filters" onsubmit="return false">
-        <label>岗位<select id="f-role"><option value="">全部</option></select></label>
-        <label>公司<select id="f-company"><option value="">全部</option></select></label>
-        <label>题型<select id="f-type"><option value="">全部</option></select></label>
-        <label>语言<select id="f-lang"><option value="">全部</option><option value="zh">中文</option><option value="en">English</option></select></label>
-        <label class="grow">关键词<input id="f-text" type="search" placeholder="Redis / 闭包 / rate limiter"></label>
-        <label class="check"><input id="f-hot" type="checkbox"> 只看高频</label>
-        <span id="f-count" class="count"></span>
-      </form>
+      <section id="filters" class="filters-panel" aria-label="筛选">
+        <div class="srow"><span class="row-name">岗位</span><div class="opts" id="f-role" role="group" aria-label="岗位"></div></div>
+        <div class="srow"><span class="row-name">公司</span><div class="opts" id="f-company" role="group" aria-label="公司"></div></div>
+        <div class="srow srow-tight">
+          <span class="row-name">题型</span>
+          <div class="seg" id="f-type" role="group" aria-label="题型"></div>
+          <span class="row-name row-gap">语言</span>
+          <div class="seg" id="f-lang" role="group" aria-label="语言">
+            <button type="button" data-v="">全部</button><button type="button" data-v="zh">中文</button><button type="button" data-v="en">EN</button>
+          </div>
+          <button type="button" class="opt toggle" id="f-hot" aria-pressed="false">只看高频</button>
+        </div>
+        <div class="search-row">
+          <input id="f-text" type="search" placeholder="搜题目关键词：Redis、闭包、rate limiter…" autocomplete="off">
+          <span id="f-count" class="count"></span>
+        </div>
+      </section>
 
       <article id="card" class="card">
         <div id="card-meta" class="chips"></div>
@@ -183,6 +191,7 @@ python3 open-interview/skills/mock-interviewer/scripts/studio.py</pre>
         </div>
         <textarea id="p-answer" rows="4" placeholder="说出或写下你的回答。下一题时自动存进练习记录。"></textarea>
         <div id="card-ref" class="card-ref md" hidden></div>
+        <div id="card-src" class="card-src"></div>
       </article>
 
       <div class="history-head">

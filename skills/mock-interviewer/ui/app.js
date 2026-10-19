@@ -656,16 +656,18 @@
     style: 'neutral', lang: 'zh', n: 5 }, store.get('studio', {}));
   const pressed = (box, v) => box.querySelectorAll('[data-v]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === String(v))));
 
-  function segBind(id, key) {
-    const box = $(id);
+  // Segmented buttons / tiles: one value per group.
+  function segGroup(box, get, set) {
     box.addEventListener('click', (e) => {
       const b = e.target.closest('button[data-v]');
       if (!b || b.disabled) return;
-      pick[key] = b.dataset.v;
-      pressed(box, pick[key]);
-      renderSummary();
+      set(b.dataset.v);
+      pressed(box, get());
     });
-    pressed(box, pick[key]);
+    pressed(box, get());
+  }
+  function segBind(id, key) {
+    segGroup($(id), () => pick[key], (v) => { pick[key] = v; renderSummary(); });
   }
   function renderBackends() {
     const box = $('#st-backends');
@@ -688,34 +690,45 @@
     }).join('');
     pressed(box, pick.round);
   }
-  // A row of popular options plus a searchable "more" popover over the whole vocabulary.
-  function chipPicker(key, vocab, counts, anyLabel, placeholder) {
-    const box = $('#st-' + key);
+  // A row of popular options plus a searchable "more" popover over the rest of the vocabulary.
+  function chipPicker(box, { vocab, counts, popular, get, set, anyLabel, placeholder, unit }) {
     const all = Object.keys(vocab).filter((k) => counts[k]).sort((a, b) => counts[b] - counts[a]);
-    const top = POPULAR[key].filter((k) => counts[k]);
+    const top = popular.filter((k) => counts[k]);
+    const rest = all.filter((k) => !top.includes(k));
     const name = (k) => vocab[k]?.name || k;
     const hay = (k) => [k, vocab[k].name, vocab[k].en, ...(vocab[k].aliases || [])].join(' ').toLowerCase();
     function render() {
-      const inTop = !pick[key] || top.includes(pick[key]);
+      const cur = get() || '';
+      const inTop = !cur || top.includes(cur);
       box.innerHTML = `<button type="button" class="opt" data-v="">${anyLabel}</button>` +
         top.map((k) => `<button type="button" class="opt" data-v="${k}">${esc(name(k))} <small>${counts[k]}</small></button>`).join('') +
-        `<span class="combo"><button type="button" class="opt more"${inTop ? '' : ` data-v="${pick[key]}"`}>` +
-        `${inTop ? '更多' : esc(name(pick[key]))} ⌄</button><div class="pop" hidden>` +
-        `<input type="text" placeholder="${placeholder}" autocomplete="off"><ul></ul></div></span>`;
-      pressed(box, pick[key]);
-      const pop = box.querySelector('.pop'), input = pop.querySelector('input'), list = pop.querySelector('ul');
+        (rest.length ? `<span class="combo"><button type="button" class="opt more"${inTop ? '' : ` data-v="${cur}"`}>` +
+          `${inTop ? `更多 ${rest.length} ${unit}` : esc(name(cur))} ⌄</button><div class="pop" hidden>` +
+          `<input type="text" placeholder="${placeholder}" autocomplete="off"><ul></ul></div></span>` : '');
+      pressed(box, cur);
+      box.querySelectorAll('.opt[data-v]:not(.more)').forEach((b) => { b.onclick = () => choose(b.dataset.v); });
+      const pop = box.querySelector('.pop');
+      if (!pop) return;
+      const input = pop.querySelector('input'), list = pop.querySelector('ul');
       const fill = () => {
         const q = input.value.trim().toLowerCase();
-        const hits = all.filter((k) => !q || hay(k).includes(q)).slice(0, 60);
-        list.innerHTML = hits.map((k, i) => `<li data-k="${k}"${i === 0 ? ' class="active"' : ''}>${esc(name(k))}<small>${counts[k]} 题</small></li>`).join('') ||
+        const hits = (q ? all : rest).filter((k) => !q || hay(k).includes(q)).slice(0, 80);
+        list.innerHTML = hits.map((k, i) => `<li data-k="${k}"${i === 0 ? ' class="active"' : ''}><span>${esc(name(k))}</span><small>${counts[k]} 题</small></li>`).join('') ||
           '<li class="empty">没有匹配</li>';
       };
-      const choose = (k) => { pick[key] = k; render(); renderSummary(); };
       box.querySelector('.more').onclick = (e) => {
         e.stopPropagation();
-        document.querySelectorAll('.pop').forEach((p) => { if (p !== pop) p.hidden = true; });
+        document.querySelectorAll('.pop').forEach((x) => { if (x !== pop) x.hidden = true; });
         pop.hidden = !pop.hidden;
-        if (!pop.hidden) { input.value = ''; fill(); input.focus(); }
+        if (pop.hidden) return;
+        input.value = '';
+        fill();
+        pop.style.left = '0px';  // keep the popover inside the window
+        const r = pop.getBoundingClientRect();
+        const over = r.right - (document.documentElement.clientWidth - 12);
+        if (over > 0) pop.style.left = `${-Math.min(over, r.left - 12)}px`;
+        input.focus({ preventScroll: true });
+        pop.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       };
       input.oninput = fill;
       input.onkeydown = (e) => {
@@ -723,8 +736,8 @@
         if (e.key === 'Escape') pop.hidden = true;
       };
       list.onclick = (e) => { const li = e.target.closest('li[data-k]'); if (li) choose(li.dataset.k); };
-      box.querySelectorAll('.opt[data-v]:not(.more)').forEach((b) => { b.onclick = () => choose(b.dataset.v); });
     }
+    function choose(k) { set(k); render(); }
     render();
   }
   document.addEventListener('click', (e) => { if (!e.target.closest('.combo')) document.querySelectorAll('.pop').forEach((p) => { p.hidden = true; }); });
@@ -770,8 +783,10 @@
     $('#st-plus').onclick = () => { pick.n = Math.min(10, +pick.n + 1); renderSummary(); };
     try {
       await ensureBank();
-      chipPicker('company', bank.tags.companies, count('companies'), '不限', '搜公司：字节、tiktok、google…');
-      chipPicker('role', bank.tags.roles, count('roles'), '不限', '搜岗位：后端、算法、测试…');
+      chipPicker($('#st-company'), { vocab: bank.tags.companies, counts: count('companies'), popular: POPULAR.company, unit: '家',
+        get: () => pick.company, set: (v) => { pick.company = v; renderSummary(); }, anyLabel: '不限', placeholder: '搜公司：字节、tiktok、google…' });
+      chipPicker($('#st-role'), { vocab: bank.tags.roles, counts: count('roles'), popular: POPULAR.role, unit: '个',
+        get: () => pick.role, set: (v) => { pick.role = v; renderSummary(); }, anyLabel: '不限', placeholder: '搜岗位：后端、算法、测试…' });
     } catch { /* chips stay empty; the server falls back to all questions */ }
     if (!ok.length) $('#st-note').textContent = '没有检测到可用的 agent CLI：安装并登录 Claude Code、Codex、agy、Cursor Agent 或 OpenCode 之一后重启 studio。';
     $('#st-start').disabled = !ok.length;
@@ -825,6 +840,8 @@
   let bank = null, pool = [], pcur = null;
   const seen = new Set();
   let history = store.get('history', []);
+  const pf = Object.assign({ role: '', company: '', type: '', lang: '', text: '', hot: false }, store.get('filters', {}));
+  const TYPE_SHORT = { technical: '八股', coding: '手撕', 'system-design': '系统设计', behavioral: '行为', project: '项目', hr: 'HR' };
   const roleChain = (r) => { const out = new Set(); while (r && !out.has(r)) { out.add(r); r = bank.tags.roles[r]?.parent; } return out; };
 
   let bankLoading = null, practiceReady = false;
@@ -837,14 +854,6 @@
     for (const q of bank.questions) for (const v of (field === 'type' ? [q.type] : q[field] || [])) c[v] = (c[v] || 0) + 1;
     return c;
   };
-  function fillSelect(sel, vocab, counts) {
-    Object.keys(vocab).filter((k) => counts[k]).sort((a, b) => counts[b] - counts[a]).forEach((k) => {
-      const o = document.createElement('option');
-      o.value = k;
-      o.textContent = `${vocab[k].name || k} · ${counts[k]}`;
-      sel.appendChild(o);
-    });
-  }
   async function loadBank() {
     if (practiceReady) return;
     try {
@@ -854,19 +863,27 @@
       return;
     }
     practiceReady = true;
-    fillSelect($('#f-role'), bank.tags.roles, count('roles'));
-    fillSelect($('#f-company'), bank.tags.companies, count('companies'));
-    fillSelect($('#f-type'), bank.tags.types, count('type'));
-    const saved = store.get('filters', {});
-    for (const [k, v] of Object.entries(saved)) { const el = $('#f-' + k); if (el) el[el.type === 'checkbox' ? 'checked' : 'value'] = v; }
+    const refilter = () => applyFilters();
+    chipPicker($('#f-role'), { vocab: bank.tags.roles, counts: count('roles'), popular: POPULAR.role, unit: '个',
+      get: () => pf.role, set: (v) => { pf.role = v; refilter(); }, anyLabel: '不限', placeholder: '搜岗位：后端、算法、测试…' });
+    chipPicker($('#f-company'), { vocab: bank.tags.companies, counts: count('companies'), popular: POPULAR.company, unit: '家',
+      get: () => pf.company, set: (v) => { pf.company = v; refilter(); }, anyLabel: '不限', placeholder: '搜公司：字节、tiktok、google…' });
+    const types = count('type');
+    $('#f-type').innerHTML = '<button type="button" data-v="">全部</button>' + Object.keys(bank.tags.types).filter((k) => types[k])
+      .map((k) => `<button type="button" data-v="${k}">${esc(TYPE_SHORT[k] || bank.tags.types[k].name)}</button>`).join('');
+    segGroup($('#f-type'), () => pf.type, (v) => { pf.type = v; refilter(); });
+    segGroup($('#f-lang'), () => pf.lang, (v) => { pf.lang = v; refilter(); });
+    $('#f-hot').setAttribute('aria-pressed', String(!!pf.hot));
+    $('#f-hot').onclick = () => { pf.hot = !pf.hot; $('#f-hot').setAttribute('aria-pressed', String(pf.hot)); refilter(); };
+    $('#f-text').value = pf.text || '';
+    $('#f-text').oninput = () => { pf.text = $('#f-text').value; refilter(); };
     applyFilters();
     renderHistory();
     updateStatus();
   }
   function applyFilters() {
-    const f = { role: $('#f-role').value, company: $('#f-company').value, type: $('#f-type').value,
-      lang: $('#f-lang').value, text: $('#f-text').value.trim().toLowerCase(), hot: $('#f-hot').checked };
-    store.set('filters', f);
+    store.set('filters', pf);
+    const f = { ...pf, text: (pf.text || '').trim().toLowerCase() };
     const roles = f.role ? roleChain(f.role) : null;
     pool = bank.questions.filter((q) =>
       (!roles || !q.roles || q.roles.some((r) => roles.has(r))) &&
@@ -892,6 +909,7 @@
       pcur = null;
       $('#card-q').textContent = '没有符合条件的题目，放宽一下筛选试试。';
       $('#card-meta').innerHTML = '';
+      $('#card-src').innerHTML = '';
       return;
     }
     let fresh = pool.filter((q) => !seen.has(q.id));
@@ -899,28 +917,32 @@
     pcur = pickWeighted(fresh);
     seen.add(pcur.id);
     const t = bank.tags;
+    const cos = (pcur.companies || []).map((c) => t.companies[c]?.name || c);
+    const asked = !cos.length ? '' : pcur.exp ? `${cos[0]} 面经原题` : cos.length > 2 ? `${cos.slice(0, 2).join('、')} 等 ${cos.length} 家问过` : `${cos.join('、')} 问过`;
     const chips = [
       `<span class="chip">${esc(t.types[pcur.type]?.name || pcur.type)}</span>`,
-      ...(pcur.roles || []).map((r) => `<span class="chip">${esc(t.roles[r]?.name || r)}</span>`),
-      ...(pcur.companies || []).map((c) => `<span class="chip co">@${esc(t.companies[c]?.name || c)}</span>`),
+      ...(pcur.roles || []).slice(0, 2).map((r) => `<span class="chip">${esc(t.roles[r]?.name || r)}</span>`),
+      asked ? `<span class="chip co" title="${pcur.exp ? '来自一次真实面试的记录（面经）' : '题库来源标注了这些公司问过这道题'}">${esc(asked)}</span>` : '',
+      pcur.round && !/^(面试|interview)$/i.test(pcur.round) ? `<span class="chip">${esc(pcur.round)}</span>` : '',
       pcur.difficulty ? `<span class="chip">难度 ${pcur.difficulty}/5</span>` : '',
       pcur.hot ? '<span class="chip hot">高频</span>' : '',
-      `<span class="chip">${esc(bank.sources[pcur.src].name)}</span>`,
     ];
     $('#card-meta').innerHTML = chips.join('');
+    const src = bank.sources[pcur.src];
+    const [owner, repo] = src.name.split('/');
+    const who = pcur.exp ? `${owner} 分享的面经` : (repo || src.name);
+    $('#card-src').innerHTML = `出处：<a href="${esc(pcur.url || src.url || '#')}" target="_blank" rel="noopener">${esc(who)} ↗</a> · ${esc(src.license || '')}`;
     $('#card-q').textContent = pcur.q;
     $('#p-answer').value = '';
     $('#card-ref').hidden = true;
   }
   function reveal() {
     if (!pcur) return;
-    const src = bank.sources[pcur.src];
     const parts = [];
     if (pcur.answer_brief) parts.push(`**简答**：${pcur.answer_brief}`);
     if (pcur.key_points?.length) parts.push('**要点**\n' + pcur.key_points.map((k) => `- ${k}`).join('\n'));
     if (pcur.followups?.length) parts.push('**常见追问**\n' + pcur.followups.map((k) => `- ${k}`).join('\n'));
     if (!parts.length) parts.push('这道题还没有整理要点，欢迎提 PR 补充 `key_points`。');
-    parts.push(`来源：[${src.name}](${pcur.url || src.url}) · ${src.license}`);
     const el = $('#card-ref');
     el.innerHTML = md(parts.join('\n\n'));
     el.hidden = !el.hidden;
@@ -937,7 +959,6 @@
     $('#h-count').textContent = history.length;
     $('#history').innerHTML = history.slice(0, 30).map((h) => `<li><b>${esc(h.q)}</b><span>${esc(h.a)}</span></li>`).join('');
   }
-  $('#filters').addEventListener('input', () => { if (practiceReady) applyFilters(); });
   $('#p-next').onclick = () => nextQuestion();
   $('#p-speak').onclick = () => pcur && speak(pcur.q);
   $('#p-mic').onclick = () => toggleMic($('#p-answer'));
