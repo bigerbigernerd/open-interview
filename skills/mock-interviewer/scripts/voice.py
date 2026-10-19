@@ -17,6 +17,7 @@ Waits are short on purpose (50 s) so they fit inside any agent's command timeout
   voice.py status | stop
 
 --show puts text on screen without reading it aloud (code, a problem statement, a diagram).
+--progress 2/5 on say/ask moves the UI's progress bar to main question 2 of 5.
 Answers may start with [HINT], [SKIP] or [END] when the candidate presses those buttons.
 Transcripts are appended to ~/.mock-interviewer/sessions/*.jsonl.
 """
@@ -72,14 +73,14 @@ class Bridge:
             self.cv.notify_all()
             return ev
 
-    def say(self, text, show, expect):
+    def say(self, text, show, expect, **extra):
         with self.cv:
             self.counter += 1
             qid = f"q{self.counter}"
             if expect:
                 self.pending = qid
                 self.last_ask = qid
-        self.push("interviewer", id=qid, text=text, show=show, expect=expect)
+        self.push("interviewer", id=qid, text=text, show=show, expect=expect, **extra)
         return qid
 
     def answer(self, qid, text):
@@ -157,6 +158,8 @@ def make_handler(bridge, get_routes=None, post_routes=None):
             qs = {k: v[0] for k, v in parse_qs(u.query).items()}
             if u.path in get_routes:
                 return self._json(get_routes[u.path](qs))
+            if u.path == "/api/studio":  # the page asks; a plain bridge is not a studio
+                return self._json({"studio": False})
             if u.path == "/api/events":
                 evs = bridge.poll(int(qs.get("after", 0)), min(float(qs.get("wait", 25)), 30))
                 return self._json({"bridge": True, "events": evs, "pending": bridge.pending})
@@ -188,7 +191,8 @@ def make_handler(bridge, get_routes=None, post_routes=None):
             if u.path in post_routes:
                 return self._json(post_routes[u.path](b))
             if u.path == "/api/say":
-                qid = bridge.say(b.get("text", ""), b.get("show"), bool(b.get("expect")))
+                extra = {"progress": b["progress"]} if b.get("progress") else {}
+                qid = bridge.say(b.get("text", ""), b.get("show"), bool(b.get("expect")), **extra)
                 return self._json({"id": qid})
             if u.path == "/api/answer":
                 ok = bridge.answer(b.get("id", ""), str(b.get("text", "")))
@@ -306,15 +310,22 @@ def show_arg(a):
     return a.show
 
 
+def progress_arg(a):
+    if not a.progress:
+        return None
+    done, _, total = a.progress.partition("/")
+    return {"n": int(done), "total": int(total or 0)}
+
+
 def cmd_say(a):
     warn_if_no_ui()
-    call("POST", "/api/say", {"text": a.text, "show": show_arg(a), "expect": False})
+    call("POST", "/api/say", {"text": a.text, "show": show_arg(a), "expect": False, "progress": progress_arg(a)})
     print("ok")
 
 
 def cmd_ask(a):
     warn_if_no_ui()
-    r = call("POST", "/api/say", {"text": a.text, "show": show_arg(a), "expect": True})
+    r = call("POST", "/api/say", {"text": a.text, "show": show_arg(a), "expect": True, "progress": progress_arg(a)})
     wait_for(r["id"], a.timeout)
 
 
@@ -369,6 +380,7 @@ def main():
         p.add_argument("text", help="what the interviewer says out loud (plain sentences, no markdown)")
         p.add_argument("--show", help="markdown shown on screen but not spoken")
         p.add_argument("--show-file", help="like --show, read from a file")
+        p.add_argument("--progress", help="main question number / total, e.g. 2/5 (drives the progress bar)")
         if name == "ask":
             p.add_argument("--timeout", type=float, default=50, help="seconds before returning exit 3")
     p = sub.add_parser("wait")

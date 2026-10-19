@@ -9,10 +9,11 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div class="chrome">
 <header class="top">
   <a class="brand" href="#agent"><span class="dot"></span>OPEN<b>INTERVIEW</b><span class="cursor">_</span></a>
   <nav class="tabs" role="tablist">
-    <a href="#agent" role="tab" data-tab="agent">Agent 面试</a>
+    <a href="#agent" role="tab" data-tab="agent">模拟面试</a>
     <a href="#practice" role="tab" data-tab="practice">自助刷题</a>
   </nav>
   <div class="top-right">
@@ -21,8 +22,20 @@
   </div>
 </header>
 
+<div id="hud" class="hud" hidden>
+  <div class="hud-inner">
+    <span class="hud-live"><i></i><b id="hud-state">LIVE</b></span>
+    <span id="hud-label" class="hud-label"></span>
+    <span id="hud-step" class="hud-step"></span>
+    <span class="hud-prog" id="hud-prog"><i id="hud-bar"></i></span>
+    <span id="hud-time" class="hud-time">00:00</span>
+    <button id="btn-end" class="hud-end" disabled>结束面试</button>
+  </div>
+</div>
+</div>
+
 <main>
-  <!-- ============ Agent mode ============ -->
+  <!-- ============ Interview ============ -->
   <section id="view-agent" class="view">
     <div class="room">
       <div class="stage">
@@ -32,34 +45,68 @@
         </div>
 
         <div id="agent-offline" class="notice" hidden>
-          <h2>还没连上 agent</h2>
-          <p>这个页面是面试官的「嘴和耳朵」，出题和追问由你的 AI agent 负责。在装了 <code>mock-interviewer</code> skill 的 agent 里说：</p>
-          <pre>用语音模拟面试我：字节跳动 后端 校招一面</pre>
-          <p>agent 会运行 <code>voice.py start</code> 并给你一个本地链接。不想接 agent，可以去 <a href="#practice">自助刷题</a>。</p>
+          <h2>还没连上面试官</h2>
+          <p>完整的面试需要在本机运行（面试官由你电脑上的 agent CLI 扮演）：</p>
+          <pre>git clone https://github.com/bigerbigernerd/open-interview
+python3 open-interview/skills/mock-interviewer/scripts/studio.py</pre>
+          <p>或者在装了 <code>mock-interviewer</code> skill 的 agent 里说「用语音模拟面试我」。只想刷题可以去 <a href="#practice">自助刷题</a>。</p>
         </div>
 
-        <form id="studio-setup" class="setup" hidden onsubmit="return false">
+        <section id="studio-setup" class="setup" hidden>
           <div class="setup-head">
-            <div class="overlay-kicker">NEW INTERVIEW</div>
-            <h2 id="setup-title">开一场模拟面试</h2>
-            <p class="fine">面试官由你本机的 agent CLI 扮演，用的是它现有的登录和额度，不需要 API key。每轮大约 5-15 秒。</p>
+            <div>
+              <div class="kicker">NEW INTERVIEW</div>
+              <h2 id="setup-title">开一场模拟面试</h2>
+            </div>
+            <div class="seg" id="st-lang" role="group" aria-label="面试语言">
+              <button type="button" data-v="zh">中文</button><button type="button" data-v="en">EN</button>
+            </div>
           </div>
-          <label>面试官<select id="st-backend"></select></label>
-          <label>模型（可选）<input id="st-model" type="text" placeholder="用 CLI 默认模型" autocomplete="off"></label>
-          <label>公司<select id="st-company"><option value="">不限</option></select></label>
-          <label>岗位<select id="st-role"><option value="">不限</option></select></label>
-          <label>职级<select id="st-level">
-            <option value="">不限</option><option value="intern">实习</option><option value="campus" selected>校招</option>
-            <option value="junior">社招 1-3 年</option><option value="mid">社招 3-5 年</option><option value="senior">高级 / 资深</option>
-          </select></label>
-          <label>轮次<select id="st-round"></select></label>
-          <label>语言<select id="st-lang"><option value="zh">中文</option><option value="en">English</option></select></label>
-          <label>题数<select id="st-n"><option>3</option><option>4</option><option selected>5</option><option>6</option><option>8</option></select></label>
-          <div class="setup-go">
-            <button id="st-start" class="primary big" type="button">开始面试</button>
+
+          <div class="step">
+            <div class="step-label"><b>01</b>面试官</div>
+            <div>
+              <div class="tiles" id="st-backends" role="group" aria-label="面试官后端"></div>
+              <button type="button" class="advanced" id="st-adv">＋ 高级：指定模型</button>
+              <div id="st-adv-box" hidden><input id="st-model" class="model" type="text" placeholder="留空 = CLI 默认模型，例如 gpt-5 / sonnet" autocomplete="off"></div>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-label"><b>02</b>目标岗位</div>
+            <div>
+              <div class="srow"><span class="row-name">公司</span><div class="opts" id="st-company" role="group" aria-label="公司"></div></div>
+              <div class="srow"><span class="row-name">岗位</span><div class="opts" id="st-role" role="group" aria-label="岗位"></div></div>
+              <div class="srow"><span class="row-name">职级</span>
+                <div class="seg" id="st-level" role="group" aria-label="职级">
+                  <button type="button" data-v="intern">实习</button><button type="button" data-v="campus">校招</button><button type="button" data-v="junior">1-3 年</button><button type="button" data-v="mid">3-5 年</button><button type="button" data-v="senior">资深</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="step">
+            <div class="step-label"><b>03</b>这一轮</div>
+            <div>
+              <div class="tiles" id="st-round" role="group" aria-label="轮次"></div>
+              <div class="srow srow-tight">
+                <span class="row-name">风格</span>
+                <div class="seg" id="st-style" role="group" aria-label="面试官风格">
+                  <button type="button" data-v="neutral">中性</button><button type="button" data-v="supportive">温和 · 会给提示</button><button type="button" data-v="pressure">压力面</button>
+                </div>
+                <span class="row-name row-gap">题数</span>
+                <span class="stepper"><button type="button" id="st-minus" aria-label="减少">−</button><output id="st-n">5</output><button type="button" id="st-plus" aria-label="增加">+</button></span>
+                <span class="hint" id="st-dur"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="go">
+            <button id="st-start" class="primary big" type="button">开始面试 →</button>
+            <span class="summary" id="st-summary"></span>
             <span id="st-note" class="fine"></span>
           </div>
-        </form>
+        </section>
 
         <div id="studio-error" class="notice error" hidden>
           <b>面试官没有回应</b>
@@ -72,23 +119,6 @@
 
         <div id="question" class="question" aria-live="polite"></div>
         <div id="show" class="show md" hidden></div>
-
-        <div class="answer">
-          <div class="answer-head">
-            <span id="answer-label">你的回答</span>
-            <span id="rec-state" class="rec-state"></span>
-          </div>
-          <textarea id="answer-text" rows="5" placeholder="按 空格 开始说话，或直接打字。Ctrl/⌘ + Enter 提交。" disabled></textarea>
-        </div>
-
-        <div class="controls">
-          <button id="btn-mic" class="mic" disabled><span class="mic-dot"></span><span class="lbl">开始说话</span><kbd>Space</kbd></button>
-          <button id="btn-submit" class="primary" disabled>提交回答 <kbd>⌘↵</kbd></button>
-          <button id="btn-repeat" disabled title="再读一遍题目">重复 <kbd>R</kbd></button>
-          <button id="btn-hint" disabled>要提示</button>
-          <button id="btn-skip" disabled>跳过</button>
-          <button id="btn-end" class="ghost" disabled>结束面试</button>
-        </div>
       </div>
 
       <aside class="log">
@@ -100,12 +130,30 @@
       </aside>
     </div>
 
+    <div id="answer-bar" class="answer-bar">
+      <div class="answer-inner">
+        <div class="answer-tools">
+          <span id="rec-state" class="rec-state"></span>
+          <span class="tools-right">
+            <button id="btn-repeat" class="link" disabled title="再读一遍题目">重复 <kbd>R</kbd></button>
+            <button id="btn-hint" class="link" disabled>要提示</button>
+            <button id="btn-skip" class="link" disabled>跳过</button>
+          </span>
+        </div>
+        <div class="answer-main">
+          <button id="btn-mic" class="mic mic-big" disabled title="开始 / 停止说话（空格）"><span class="mic-dot"></span><span class="lbl">说话</span></button>
+          <textarea id="answer-text" rows="1" placeholder="按 空格 说话，或直接打字回答" disabled></textarea>
+          <button id="btn-submit" class="primary" disabled>提交 <kbd>⌘↵</kbd></button>
+        </div>
+      </div>
+    </div>
+
     <div id="start-overlay" class="overlay" hidden>
       <div class="overlay-card">
-        <div class="overlay-kicker">AGENT CONNECTED</div>
-        <h2>准备好了吗？</h2>
-        <p>点「开始」后浏览器会请求麦克风权限。题目会被朗读出来，读完后自动开始听你回答。</p>
-        <button id="btn-start" class="primary big">开始面试</button>
+        <div class="overlay-kicker">INTERVIEW IN PROGRESS</div>
+        <h2>继续面试</h2>
+        <p>点「继续」后浏览器会请求麦克风权限。题目会被朗读出来，读完后自动开始听你回答。</p>
+        <button id="btn-start" class="primary big">继续</button>
         <p class="fine">语音识别使用浏览器自带的 Web Speech API：Chrome / Edge 会把音频发到各自的云端识别服务；Firefox 不支持，可以打字作答。</p>
       </div>
     </div>
@@ -152,6 +200,12 @@
 <div id="report" class="overlay" hidden>
   <div class="overlay-card wide">
     <div class="overlay-kicker">INTERVIEW REPORT</div>
+    <div id="report-hero" class="report-hero" hidden>
+      <div class="verdict">这是一场 <span id="report-verdict" class="badge"></span> 面试</div>
+      <div id="report-label" class="summary"></div>
+      <p id="report-summary" class="report-summary"></p>
+      <div id="report-bars" class="bars-grid"></div>
+    </div>
     <div id="report-body" class="md"></div>
     <div class="row">
       <button id="report-download" class="primary">下载报告</button>

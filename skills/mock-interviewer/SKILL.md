@@ -77,6 +77,8 @@ python3 scripts/voice.py ask "给你一个整数数组，返回和为 target 的
   as an empty answer. If your command timeout is shorter than 50 s, pass a smaller `--timeout`.
 - The bridge is a local HTTP server on 127.0.0.1. If your sandbox blocks local network access (for example
   Codex's default workspace-write sandbox), allow these `voice.py` commands to run with network access.
+- Add `--progress k/N` to an `ask` that starts main question k of N; the page shows it as a progress bar
+  (use `0/N` for the self-introduction).
 - Speak plain sentences: no markdown, code, URLs or long lists in the spoken text. Put those in `--show`
   (rendered on screen, not read aloud). Keep each spoken turn under ~60 words.
 - Answers are speech-to-text transcripts: ignore filler words and obvious recognition errors, judge content.

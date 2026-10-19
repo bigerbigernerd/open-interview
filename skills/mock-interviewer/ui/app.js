@@ -313,6 +313,7 @@
       const done = this.base + joiner(this.base, this.committed) + this.committed;
       this.target.value = done + (this.interim ? joiner(done, this.interim) + this.interim : '');
       this.target.scrollTop = this.target.scrollHeight;
+      if (this.target.id === 'answer-text') autosize();
     },
   };
   function recNote(msg) {
@@ -322,7 +323,7 @@
   function micButtons(on) {
     for (const b of [$('#btn-mic'), $('#p-mic')]) {
       b.classList.toggle('rec', on && listener.target === (b.id === 'btn-mic' ? $('#answer-text') : $('#p-answer')));
-      b.querySelector('.lbl').textContent = b.classList.contains('rec') ? '停止' : (b.id === 'btn-mic' ? '开始说话' : '语音作答');
+      b.querySelector('.lbl').textContent = b.classList.contains('rec') ? '停止' : (b.id === 'btn-mic' ? '说话' : '语音作答');
     }
     if (on) setOrb('listening', 'LISTENING');
     else if (orb.mode === 'listening') setOrb('idle', current ? 'YOUR TURN' : 'STANDBY');
@@ -357,10 +358,14 @@
   }
   window.addEventListener('hashchange', route);
 
-  // ---------------- agent mode ----------------
+  // ---------------- interview room (agent-driven bridge or studio) ----------------
   let connected = false, started = false, lastSeq = 0, current = null, lastQuestion = null;
+  let sessionLabel = '', sessionStart = 0, sessionDone = false, asked = 0, lastProgress = null, answeredAt = 0;
   const transcript = [];
   const logEl = $('#log');
+  const ansTa = $('#answer-text');
+  const hud = $('#hud');
+  let hudTimer = null;
 
   function updateStatus() {
     const pill = $('#status');
@@ -368,14 +373,57 @@
       pill.textContent = `题库 ${bank.counts.questions} 题`;
       pill.className = 'pill on';
     } else if (studio) {
-      const b = studio.backends.find((x) => x.id === $('#st-backend').value);
+      const b = studio.backends.find((x) => x.id === pick.backend);
       pill.textContent = 'STUDIO' + (b ? ' · ' + b.name : '');
       pill.className = 'pill on';
     } else {
-      pill.textContent = connected ? 'AGENT 在线' : '未连接 agent';
+      pill.textContent = connected ? 'AGENT 在线' : '未连接面试官';
       pill.className = 'pill' + (connected ? ' on' : '');
     }
   }
+  function autosize() {
+    ansTa.style.height = 'auto';
+    ansTa.style.height = Math.min(ansTa.scrollHeight, window.innerHeight * 0.32) + 'px';
+  }
+  ansTa.addEventListener('input', autosize);
+
+  // --- HUD: progress, timer, end button ---
+  const clock = (sec) => `${String(Math.floor(sec / 60)).padStart(2, '0')}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+  function hudStart(label, ts) {
+    sessionLabel = label || sessionLabel;
+    sessionStart = ts ? ts * 1000 : Date.now();
+    sessionDone = false;
+    asked = 0;
+    lastProgress = null;
+    hud.hidden = false;
+    hud.classList.remove('done');
+    $('#hud-state').textContent = 'LIVE';
+    $('#hud-label').textContent = sessionLabel;
+    hudProgress(null);
+    clearInterval(hudTimer);
+    hudTimer = setInterval(() => { $('#hud-time').textContent = clock((Date.now() - sessionStart) / 1000); }, 1000);
+    $('#hud-time').textContent = clock((Date.now() - sessionStart) / 1000);
+  }
+  function hudProgress(p) {
+    if (p && p.total) {
+      lastProgress = p;
+      $('#hud-step').textContent = p.n ? `第 ${p.n} / ${p.total} 题` : '开场';
+      $('#hud-prog').hidden = false;
+      $('#hud-bar').style.width = `${Math.min(100, (p.n / p.total) * 100)}%`;
+    } else if (!lastProgress) {
+      $('#hud-step').textContent = asked > 1 ? `已问 ${asked} 题` : '开场';
+      $('#hud-prog').hidden = true;
+    }
+  }
+  function hudDone(ts) {
+    sessionDone = true;
+    clearInterval(hudTimer);
+    hud.classList.add('done');
+    $('#hud-state').textContent = 'DONE';
+    if (ts && sessionStart) $('#hud-time').textContent = clock(ts - sessionStart / 1000);
+    if (lastProgress) $('#hud-bar').style.width = '100%';
+  }
+
   function addLog(kind, text, extra) {
     transcript.push({ kind, text, extra });
     const li = document.createElement('li');
@@ -387,8 +435,10 @@
     logEl.scrollTop = logEl.scrollHeight;
   }
   function setControls(on) {
-    for (const id of ['#btn-mic', '#btn-submit', '#btn-hint', '#btn-skip', '#btn-end']) $(id).disabled = !on;
-    $('#answer-text').disabled = !on;
+    for (const id of ['#btn-mic', '#btn-submit', '#btn-hint', '#btn-skip']) $(id).disabled = !on;
+    $('#btn-end').disabled = !on || sessionDone;
+    ansTa.disabled = !on;
+    ansTa.placeholder = on ? '按 空格 说话，或直接打字回答' : sessionDone ? '面试已结束' : connected ? '面试官正在思考…' : '等待面试官…';
     $('#btn-repeat').disabled = !lastQuestion;
   }
   function showQuestion(ev) {
@@ -401,10 +451,11 @@
     logEl.innerHTML = '';
     current = null;
     lastQuestion = null;
-    lastReport = '';
+    lastReport = null;
     $('#question').innerHTML = '';
     $('#show').hidden = true;
-    $('#answer-text').value = '';
+    ansTa.value = '';
+    autosize();
     $('#studio-error').hidden = true;
     setControls(false);
   }
@@ -412,6 +463,8 @@
     if (ev.kind === 'reset') {
       resetRoom();
       hideSetup();
+      hudStart(ev.label, ev.ts);
+      if (ev.total) hudProgress({ n: 0, total: ev.total });
       setOrb('idle', 'PREPARING');
     } else if (ev.kind === 'system') {
       if (ev.level === 'error') {
@@ -420,30 +473,39 @@
         setOrb('idle', 'ERROR');
       }
     } else if (ev.kind === 'interviewer') {
+      if (hud.hidden) hudStart(studio ? sessionLabel : 'Agent 模拟面试', ev.ts);
       $('#studio-error').hidden = true;
       addLog('interviewer', ev.text, ev.show ? '[屏幕] ' + speakable(ev.show).slice(0, 120) : '');
       lastQuestion = ev;
       showQuestion(ev);
       current = ev.expect ? ev : null;
+      if (ev.expect) asked++;
+      hudProgress(ev.progress || null);
       setControls(!!current);
       if (!current) setOrb('idle', 'STANDBY');
+      if (!replay && answeredAt && studio) {
+        store.set('lat.' + pick.backend, Math.round((Date.now() - answeredAt) / 1000));
+        answeredAt = 0;
+      }
       if (!replay && started) enqueue(ev.text, () => autoListen(ev.id));
     } else if (ev.kind === 'answer') {
       addLog('answer', ev.text);
       if (current && current.id === ev.id) {
         current = null;
         setControls(false);
-        $('#answer-text').value = '';
-        if (!replay) setOrb('idle', 'THINKING');
+        ansTa.value = '';
+        autosize();
+        if (!replay) { setOrb('idle', 'THINKING'); answeredAt = Date.now(); }
       }
     } else if (ev.kind === 'report') {
       addLog('report', ev.text);
-      lastReport = ev.text;
+      lastReport = ev;
       current = null;
+      hudDone(ev.ts);
       setControls(false);
       setOrb('idle', 'DONE');
       if (!replay) {
-        showReport(ev.text);
+        showReport(ev);
         if (started) enqueue(hasCJK(ev.text) ? '面试结束了，报告已经生成。' : 'That is the end of the interview. Your report is ready.');
       }
       if (studio) showSetup(true);
@@ -457,7 +519,13 @@
         if (!r.ok) throw new Error(String(r.status));
         const j = await r.json();
         if (!j.bridge) throw new Error('not a bridge');
-        if (!connected) { connected = true; $('#agent-offline').hidden = true; updateStatus(); }
+        if (!connected) {
+          connected = true;
+          document.body.classList.remove('offline');
+          $('#agent-offline').hidden = true;
+          updateStatus();
+          setControls(!!current);
+        }
         for (const ev of j.events) { lastSeq = ev.seq; handle(ev, first); }
         if (first) {
           first = false;
@@ -465,29 +533,31 @@
         }
       } catch {
         if (connected || first) { connected = false; updateStatus(); }
-        if (first) $('#agent-offline').hidden = false;
+        if (first) { $('#agent-offline').hidden = false; document.body.classList.add('offline'); }
         if (!isLocal) return; // static hosting: there is no bridge to reconnect to
         await sleep(3000);
       }
     }
   }
-  $('#btn-start').onclick = () => {
+  function unlockAudio() {
     started = true;
     $('#start-overlay').hidden = true;
     initMicLevel();
     if (synth) synth.speak(new SpeechSynthesisUtterance('')); // unlocks audio on some browsers
+  }
+  $('#btn-start').onclick = () => {
+    unlockAudio();
     if (current) speak(current.text, () => autoListen(current && current.id));
     else setOrb('idle', 'STANDBY');
   };
   function autoListen(id) {
-    if (current && current.id === id && settings.auto && SR && !listener.on && queue.length === 0) toggleMic($('#answer-text'));
+    if (current && current.id === id && settings.auto && SR && !listener.on && queue.length === 0) toggleMic(ansTa);
   }
   async function submit(prefix) {
     if (!current) return;
-    const ta = $('#answer-text');
     listener.detach();
     stopSpeaking();
-    let text = ta.value.trim();
+    let text = ansTa.value.trim();
     if (!text && !prefix && !confirm('还没有回答内容，确定提交空回答吗？')) return;
     if (prefix) text = prefix + (text ? ' ' + text : '');
     const id = current.id;
@@ -495,10 +565,10 @@
       const r = await fetch('api/answer', { method: 'POST', headers: HDR, body: JSON.stringify({ id, text }) });
       if (!r.ok) throw new Error(String(r.status));
     } catch {
-      recNote('提交失败：连不上本地 agent 服务');
+      recNote('提交失败：连不上本地服务');
     }
   }
-  $('#btn-mic').onclick = () => toggleMic($('#answer-text'));
+  $('#btn-mic').onclick = () => toggleMic(ansTa);
   $('#btn-submit').onclick = () => submit('');
   $('#btn-hint').onclick = () => submit('[HINT]');
   $('#btn-skip').onclick = () => submit('[SKIP]');
@@ -509,23 +579,173 @@
     if (lastQuestion) speak(lastQuestion.text, () => autoListen(current && current.id));
   }
   function transcriptMd() {
-    return '# 模拟面试记录\n\n' + transcript.map((t) =>
-      t.kind === 'interviewer' ? `**面试官**：${t.text}` : t.kind === 'answer' ? `> **我**：${t.text}` : `---\n\n${t.text}`).join('\n\n') + '\n';
+    return '# 模拟面试记录\n\n' + transcript.filter((t) => t.kind !== 'report').map((t) =>
+      t.kind === 'interviewer' ? `**面试官**：${t.text}` : `> **我**：${t.text}`).join('\n\n') + '\n';
   }
   $('#btn-export-agent').onclick = () => download(`interview-${stamp()}.md`, transcriptMd());
 
-  let lastReport = '';
-  function showReport(text) {
-    $('#report-body').innerHTML = md(text);
+  // --- report: verdict + ability bars on top of the markdown ---
+  let lastReport = null, reportView = null;
+  const VERDICTS = ['Strong hire', 'Hire', 'Lean hire', 'Lean no hire', 'No hire'];
+  function canonVerdict(text) {
+    const m = String(text || '').match(/\b(strong hire|lean no hire|lean hire|no hire|hire)\b/i);
+    return m ? VERDICTS.find((v) => v.toLowerCase() === m[1].toLowerCase()) : null;
+  }
+  // Agent-written reports carry the scores as a markdown table; lift it into bars.
+  function parseReportMd(text) {
+    const lines = String(text || '').split('\n');
+    const cells = (r) => r.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim().replace(/\*\*/g, ''));
+    for (let i = 0; i < lines.length - 1; i++) {
+      if (!/^\s*\|/.test(lines[i]) || !/^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) continue;
+      const col = cells(lines[i]).findIndex((h) => /分|score/i.test(h));
+      if (col < 1) continue;
+      let j = i + 2;
+      const scores = [];
+      for (; j < lines.length && /^\s*\|/.test(lines[j]); j++) {
+        const r = cells(lines[j]);
+        const n = parseInt(r[col], 10);
+        if (n >= 1 && n <= 4) scores.push({ name: r[0], score: n, note: r[col + 1] || '' });
+      }
+      if (scores.length) return { scores, body: [...lines.slice(0, i), ...lines.slice(j)].join('\n') };
+    }
+    return { scores: [], body: text || '' };
+  }
+  function showReport(ev) {
+    const structured = ev.scores && ev.scores.length;
+    const parsed = structured ? { scores: ev.scores, body: ev.text } : parseReportMd(ev.text);
+    const verdict = ev.verdict || canonVerdict(ev.text);
+    reportView = { verdict, summary: ev.summary || '', scores: parsed.scores, body: parsed.body, label: sessionLabel };
+    $('#report-hero').hidden = !verdict && !parsed.scores.length;
+    $('#report-verdict').parentElement.hidden = !verdict;
+    if (verdict) {
+      const b = $('#report-verdict');
+      b.textContent = verdict;
+      b.className = 'badge' + (/^(strong hire|hire)$/i.test(verdict) ? ' good' : /no hire/i.test(verdict) ? ' bad' : '');
+    }
+    $('#report-label').textContent = sessionLabel;
+    $('#report-summary').textContent = ev.summary || '';
+    $('#report-summary').hidden = !ev.summary;
+    $('#report-bars').innerHTML = parsed.scores.map((d) =>
+      `<span>${esc(d.name)}</span><span class="bars s${d.score}" title="${d.score} / 4">${[1, 2, 3, 4].map((k) =>
+        `<i class="${k <= d.score ? 'on' : ''}"></i>`).join('')}</span><small>${esc(d.note || '')}</small>`).join('');
+    $('#report-body').innerHTML = md(parsed.body);
     $('#report').hidden = false;
   }
+  function reportMd() {
+    if (!reportView) return '';
+    const r = reportView;
+    const head = [`# 模拟面试报告${r.label ? ' · ' + r.label : ''}`, r.verdict ? `**结论**：${r.verdict}` : '', r.summary];
+    const table = r.scores.length ? ['| 维度 | 分数 | 依据 |', '|---|---|---|', ...r.scores.map((d) => `| ${d.name} | ${d.score} / 4 | ${d.note || ''} |`)].join('\n') : '';
+    return [...head, table, r.body].filter(Boolean).join('\n\n');
+  }
   $('#report-close').onclick = () => { $('#report').hidden = true; };
-  $('#report-download').onclick = () => download(`interview-report-${stamp()}.md`, lastReport + '\n\n---\n\n' + transcriptMd());
+  $('#report-download').onclick = () => download(`interview-report-${stamp()}.md`, reportMd() + '\n\n---\n\n' + transcriptMd());
 
-
-  // ---------------- studio (web-driven: a local agent CLI plays the interviewer) ----------------
+  // ---------------- studio setup (web-driven: a local agent CLI plays the interviewer) ----------------
   let studio = null;
-  const ST_FIELDS = ['backend', 'model', 'company', 'role', 'level', 'round', 'lang', 'n'];
+  const ROUND_META = {
+    mixed: ['◎', '八股 + 手撕 + 行为'], technical: ['≡', '只问知识点，追问到底'], coding: ['{ }', '1-2 道题，讲思路和复杂度'],
+    'system-design': ['⊞', '需求 → 架构 → 深挖'], behavioral: ['☺', 'STAR 追问、动机'],
+  };
+  const CMD = { claude: 'claude -p', codex: 'codex exec', agy: 'agy -p', cursor: 'cursor-agent -p', opencode: 'opencode run' };
+  const POPULAR = { company: ['bytedance', 'alibaba', 'tencent', 'meituan', 'google', 'meta'],
+    role: ['backend', 'frontend', 'ai-agent', 'llm-algorithm', 'android', 'swe'] };
+  const LEVEL_NAME = { intern: '实习', campus: '校招', junior: '1-3 年', mid: '3-5 年', senior: '资深' };
+  const STYLE_NAME = { neutral: '中性', supportive: '温和', pressure: '压力面' };
+  const pick = Object.assign({ backend: '', model: '', company: '', role: 'backend', level: 'campus', round: 'mixed',
+    style: 'neutral', lang: 'zh', n: 5 }, store.get('studio', {}));
+  const pressed = (box, v) => box.querySelectorAll('[data-v]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === String(v))));
+
+  function segBind(id, key) {
+    const box = $(id);
+    box.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-v]');
+      if (!b || b.disabled) return;
+      pick[key] = b.dataset.v;
+      pressed(box, pick[key]);
+      renderSummary();
+    });
+    pressed(box, pick[key]);
+  }
+  function renderBackends() {
+    const box = $('#st-backends');
+    const list = [...studio.backends].sort((a, b) => Number(b.available) - Number(a.available));
+    box.innerHTML = list.map((b) => {
+      const lat = store.get('lat.' + b.id, null);
+      return `<button type="button" class="tile" data-v="${b.id}"${b.available ? '' : ' disabled'}>` +
+        `<span class="name">${esc(b.name.replace(/\s*\(.*\)$/, ''))}</span><span class="sub">${esc(CMD[b.id] || '')}</span>` +
+        `<span class="foot"><span><span class="sdot${b.available ? ' ok' : ''}"></span>${b.available ? '已安装' : '未安装'}</span>` +
+        `<span>${lat ? '上次 ' + lat + 's' : ''}</span></span></button>`;
+    }).join('');
+    pressed(box, pick.backend);
+  }
+  function renderRounds() {
+    const box = $('#st-round');
+    box.innerHTML = studio.rounds.map((r) => {
+      const [glyph, sub] = ROUND_META[r.id] || ['·', ''];
+      return `<button type="button" class="tile" data-v="${r.id}"><span class="glyph">${glyph}</span>` +
+        `<span class="name">${esc(r.name)}</span><span class="sub">${esc(sub)}</span></button>`;
+    }).join('');
+    pressed(box, pick.round);
+  }
+  // A row of popular options plus a searchable "more" popover over the whole vocabulary.
+  function chipPicker(key, vocab, counts, anyLabel, placeholder) {
+    const box = $('#st-' + key);
+    const all = Object.keys(vocab).filter((k) => counts[k]).sort((a, b) => counts[b] - counts[a]);
+    const top = POPULAR[key].filter((k) => counts[k]);
+    const name = (k) => vocab[k]?.name || k;
+    const hay = (k) => [k, vocab[k].name, vocab[k].en, ...(vocab[k].aliases || [])].join(' ').toLowerCase();
+    function render() {
+      const inTop = !pick[key] || top.includes(pick[key]);
+      box.innerHTML = `<button type="button" class="opt" data-v="">${anyLabel}</button>` +
+        top.map((k) => `<button type="button" class="opt" data-v="${k}">${esc(name(k))} <small>${counts[k]}</small></button>`).join('') +
+        `<span class="combo"><button type="button" class="opt more"${inTop ? '' : ` data-v="${pick[key]}"`}>` +
+        `${inTop ? '更多' : esc(name(pick[key]))} ⌄</button><div class="pop" hidden>` +
+        `<input type="text" placeholder="${placeholder}" autocomplete="off"><ul></ul></div></span>`;
+      pressed(box, pick[key]);
+      const pop = box.querySelector('.pop'), input = pop.querySelector('input'), list = pop.querySelector('ul');
+      const fill = () => {
+        const q = input.value.trim().toLowerCase();
+        const hits = all.filter((k) => !q || hay(k).includes(q)).slice(0, 60);
+        list.innerHTML = hits.map((k, i) => `<li data-k="${k}"${i === 0 ? ' class="active"' : ''}>${esc(name(k))}<small>${counts[k]} 题</small></li>`).join('') ||
+          '<li class="empty">没有匹配</li>';
+      };
+      const choose = (k) => { pick[key] = k; render(); renderSummary(); };
+      box.querySelector('.more').onclick = (e) => {
+        e.stopPropagation();
+        document.querySelectorAll('.pop').forEach((p) => { if (p !== pop) p.hidden = true; });
+        pop.hidden = !pop.hidden;
+        if (!pop.hidden) { input.value = ''; fill(); input.focus(); }
+      };
+      input.oninput = fill;
+      input.onkeydown = (e) => {
+        if (e.key === 'Enter') { const li = list.querySelector('li[data-k]'); if (li) choose(li.dataset.k); }
+        if (e.key === 'Escape') pop.hidden = true;
+      };
+      list.onclick = (e) => { const li = e.target.closest('li[data-k]'); if (li) choose(li.dataset.k); };
+      box.querySelectorAll('.opt[data-v]:not(.more)').forEach((b) => { b.onclick = () => choose(b.dataset.v); });
+    }
+    render();
+  }
+  document.addEventListener('click', (e) => { if (!e.target.closest('.combo')) document.querySelectorAll('.pop').forEach((p) => { p.hidden = true; }); });
+
+  function estimate() {
+    const n = +pick.n;
+    return ['coding', 'system-design'].includes(pick.round) ? Math.min(n, 2) * 18 + 5 : n * 6 + 5;
+  }
+  function renderSummary() {
+    $('#st-n').textContent = pick.n;
+    $('#st-dur').textContent = `约 ${estimate()} 分钟`;
+    const tags = bank ? bank.tags : { companies: {}, roles: {} };
+    const backend = studio && studio.backends.find((b) => b.id === pick.backend);
+    const round = studio && studio.rounds.find((r) => r.id === pick.round);
+    $('#st-summary').innerHTML = [tags.companies[pick.company]?.name || '不限公司', tags.roles[pick.role]?.name || '不限岗位',
+      LEVEL_NAME[pick.level], round && round.name, STYLE_NAME[pick.style], ['coding', 'system-design'].includes(pick.round) ? `最多 ${Math.min(+pick.n, 2)} 题` : `${pick.n} 题`,
+      backend && backend.name.replace(/\s*\(.*\)$/, ''), pick.lang === 'en' ? 'English' : '中文'].filter(Boolean).map((x) => `<b>${esc(x)}</b>`).join(' · ');
+    store.set('studio', pick);
+    updateStatus();
+  }
+
   async function initStudio() {
     try {
       const r = await fetch('api/studio', { cache: 'no-store' });
@@ -533,50 +753,51 @@
       studio = await r.json();
     } catch { return; }
     if (!studio || !studio.studio) { studio = null; return; }
-    const sel = $('#st-backend');
-    sel.innerHTML = studio.backends.map((b) =>
-      `<option value="${b.id}"${b.available ? '' : ' disabled'}>${esc(b.name)}${b.available ? '' : '（未安装）'}</option>`).join('');
-    const firstOk = studio.backends.find((b) => b.available);
-    if (firstOk) sel.value = firstOk.id;
-    $('#st-round').innerHTML = studio.rounds.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join('');
+    const ok = studio.backends.filter((b) => b.available);
+    if (!ok.some((b) => b.id === pick.backend)) pick.backend = ok[0] ? ok[0].id : '';
+    renderBackends();
+    renderRounds();
+    segBind('#st-backends', 'backend');
+    segBind('#st-round', 'round');
+    segBind('#st-lang', 'lang');
+    segBind('#st-level', 'level');
+    segBind('#st-style', 'style');
+    $('#st-model').value = pick.model || '';
+    $('#st-adv-box').hidden = !pick.model;
+    $('#st-adv').onclick = () => { $('#st-adv-box').hidden = !$('#st-adv-box').hidden; if (!$('#st-adv-box').hidden) $('#st-model').focus(); };
+    $('#st-model').oninput = (e) => { pick.model = e.target.value.trim(); renderSummary(); };
+    $('#st-minus').onclick = () => { pick.n = Math.max(3, +pick.n - 1); renderSummary(); };
+    $('#st-plus').onclick = () => { pick.n = Math.min(10, +pick.n + 1); renderSummary(); };
     try {
       await ensureBank();
-      fillSelect($('#st-company'), bank.tags.companies, count('companies'));
-      fillSelect($('#st-role'), bank.tags.roles, count('roles'));
-    } catch { /* selects stay on 不限 */ }
-    const saved = store.get('studio', {});
-    for (const f of ST_FIELDS) {
-      const el = $('#st-' + f);
-      if (saved[f] != null && [...(el.options || [])].every((o) => o.value !== saved[f] || !o.disabled)) el.value = saved[f];
-    }
-    if (!firstOk) $('#st-note').textContent = '没有检测到可用的 agent CLI：安装并登录 Claude Code、Codex、agy、Cursor Agent 或 OpenCode 之一后重启 studio。';
-    $('#st-start').disabled = !firstOk;
+      chipPicker('company', bank.tags.companies, count('companies'), '不限', '搜公司：字节、tiktok、google…');
+      chipPicker('role', bank.tags.roles, count('roles'), '不限', '搜岗位：后端、算法、测试…');
+    } catch { /* chips stay empty; the server falls back to all questions */ }
+    if (!ok.length) $('#st-note').textContent = '没有检测到可用的 agent CLI：安装并登录 Claude Code、Codex、agy、Cursor Agent 或 OpenCode 之一后重启 studio。';
+    $('#st-start').disabled = !ok.length;
     $('#agent-offline').hidden = true;
+    document.body.classList.remove('offline');
     if (['running', 'error'].includes(studio.state)) hideSetup(); else showSetup(studio.state === 'done');
-    updateStatus();
+    renderSummary();
   }
   function showSetup(again) {
     $('#setup-title').textContent = again ? '再来一场？' : '开一场模拟面试';
     $('#studio-setup').hidden = false;
     document.querySelector('.stage').classList.add('setup-mode');
+    document.body.classList.add('setup-mode');
+    if (studio) renderBackends();
   }
   function hideSetup() {
     $('#studio-setup').hidden = true;
     document.querySelector('.stage').classList.remove('setup-mode');
+    document.body.classList.remove('setup-mode');
   }
-  $('#st-backend').addEventListener('change', updateStatus);
   $('#st-start').onclick = async () => {
-    const body = {};
-    for (const f of ST_FIELDS) body[f] = $('#st-' + f).value;
-    store.set('studio', body);
-    started = true;
-    $('#start-overlay').hidden = true;
-    initMicLevel();
-    if (synth) synth.speak(new SpeechSynthesisUtterance(''));
+    unlockAudio();
     $('#st-start').disabled = true;
     $('#st-note').textContent = '正在抽题、唤起面试官…';
     try {
-      const r = await fetch('api/studio/start', { method: 'POST', headers: HDR, body: JSON.stringify(body) });
+      const r = await fetch('api/studio/start', { method: 'POST', headers: HDR, body: JSON.stringify(pick) });
       const j = await r.json();
       if (!j.ok) throw new Error(j.error || 'start failed');
       $('#st-note').textContent = '';
@@ -595,6 +816,8 @@
   $('#st-reset').onclick = async () => {
     await fetch('api/studio/stop', { method: 'POST', headers: HDR, body: '{}' });
     $('#studio-error').hidden = true;
+    hud.hidden = true;
+    clearInterval(hudTimer);
     showSetup(false);
   };
 
@@ -761,12 +984,15 @@
       if (view === 'agent') submit(''); else nextQuestion();
       return;
     }
-    if (e.key === 'Escape' && !$('#report').hidden) { $('#report').hidden = true; return; }
+    if (e.key === 'Escape') {
+      document.querySelectorAll('.pop').forEach((p) => { p.hidden = true; });
+      if (!$('#report').hidden) { $('#report').hidden = true; return; }
+    }
     if (typing || e.ctrlKey || e.metaKey || e.altKey || $('#settings').open) return;
     if (e.code === 'Space') {
       if (el && el.tagName === 'BUTTON') return; // let the focused button handle it
       e.preventDefault();
-      if (view === 'agent') { if (current) toggleMic($('#answer-text')); } else toggleMic($('#p-answer'));
+      if (view === 'agent') { if (current) toggleMic(ansTa); } else toggleMic($('#p-answer'));
     } else if (e.key === 'r' || e.key === 'R') repeat();
     else if ((e.key === 'n' || e.key === 'N') && view === 'practice') nextQuestion();
   });
