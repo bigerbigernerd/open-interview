@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Re-import seed questions from permissively licensed upstream repos.
+"""Re-import seed questions and 面经 from permissively licensed upstream repos.
 
-    python3 tools/import_upstream.py            # clone into .cache/upstream/ and regenerate bank/questions/imported/
+    python3 tools/import_upstream.py            # clone into .cache/upstream/ and regenerate the imported/ dirs
     python3 tools/import_upstream.py --offline  # reuse existing clones
 
 Every generated file records the upstream repo, commit and license. Files under
-bank/questions/imported/ are generated: fix the importer (or upstream) instead of editing them.
-Only question text, light metadata and short follow-ups are imported; long answers are linked, not copied.
+bank/questions/imported/ and bank/experiences/imported/ are generated: fix the importer (or upstream)
+instead of editing them. Only question text, light metadata and short follow-ups are imported; long
+answers are linked, not copied. 面经 sources must be the author's own interviews (no reposts).
 """
 import argparse
 import html
@@ -14,12 +15,14 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / ".cache" / "upstream"
 OUT = ROOT / "bank" / "questions" / "imported"
+EXP_OUT = ROOT / "bank" / "experiences" / "imported"
 
 SOURCES = {
     "h5bp": ("h5bp/Front-end-Developer-Interview-Questions", "MIT"),
@@ -30,11 +33,19 @@ SOURCES = {
     "supergodog": ("SuperGODOG/ai-agent-interview-240", "MIT"),
     "misterbooo": ("MisterBooo/llm-interview-questions", "CC-BY-SA-4.0"),
     "javaguide": ("Snailclimb/JavaGuide", "Apache-2.0"),
+    # 面经: first-person interview reports, one interview per generated file
+    "jx888": ("jx888-max/Interview-experience", "MIT"),
+    "ewaste": ("Electronic-Waste/My-Job-Hunting", "MIT"),
+    "cocainecong": ("CocaineCong/Golang-Interview", "MIT"),
+    "pypy233": ("Pypy233/Interview-Collection", "MIT"),
+    "hurley": ("HurleyWong/vuepress-interview-hurley", "MIT"),
 }
 SPARSE = ["*.md", "LICENSE*"]
 OUT_DIR = {"h5bp": "h5bp", "haizlin": "haizlin", "tih": "tech-interview-handbook", "kdn251": "kdn251",
            "sdp": "system-design-primer", "supergodog": "supergodog", "misterbooo": "llm-interview-questions",
-           "javaguide": "javaguide"}
+           "javaguide": "javaguide", "jx888": "jx888-max", "ewaste": "electronic-waste",
+           "cocainecong": "cocainecong", "pypy233": "pypy233", "hurley": "hurleywong"}
+EXPERIENCE_SOURCES = {"jx888", "ewaste", "cocainecong", "pypy233", "hurley"}
 
 
 # ---------- helpers ----------
@@ -390,9 +401,431 @@ def imp_javaguide(d, sha):
     return n
 
 
+# ---------- 面经 (interview reports) ----------
+#
+# One upstream interview becomes one bank/experiences/imported/<source>/<company>[-<date>]-<role>.yml.
+# company / role / level / date / result / department come only from what the upstream author wrote
+# (folder names, titles, README tables, closing remarks); the per-source tables say where. Anything the
+# author did not state is left out. Lines are kept close to the original; only asides such as
+# 「（我：没有）」, emoji and the author's own answers are cut, and 自我介绍 / 反问 are dropped.
+
+EXP_CONTEXT = re.compile(r"下面这|以下代码|如下|下列|这段代码|该代码|图中|上图|这样初始化")
+EXP_JUNK = re.compile(r"blabla|balabala|忘了|忘记了|不太记得|记不清")
+EMOJI = re.compile("[\U0001F300-\U0001FAFF☀-➿️]")
+ASIDE = re.compile(r"\s*[（(][^（）()]*(?:我|不会|没有|忘|撕出来|一模一样|提升点|咳|ˇ)[^（）()]*[)）]")
+NARRATIVE = re.compile(r"我|没接触|不会|不了解|复述|满意")
+SELF_INTRO = re.compile(r"^[^，,。？?]{0,6}自[我己]介绍(?:[，,。].{0,8})?$")
+
+
+def _w(word):  # an ASCII word inside Chinese text, where \b does not work
+    return rf"(?<![a-z]){word}(?![a-z])"
+
+
+EXP_TYPES = [(t, re.compile(rx, re.I)) for t, rx in [
+    ("coding", r"手撕|手写|算法题|^算法[：:]|编程题|写代码|代码题|leetcode|^写一个|^实现一个|数据结构去实现|栈实现队列"
+               r"|(?:反转|翻转|合并|判断|找到).{0,8}链表|链表.{0,6}(?:反转|有环|中间节点|实现)|回文|queen|top ?k|子串|子序列"
+               r"|交替打印"),
+    ("system-design", r"场景题|设计一个|如何设计|怎么设计|系统设计|设计数据库|10w|1w台|100G|亿级|突然多了"),
+    ("hr", r"到岗|实习时长|base地|福利|待遇|薪资"),
+    ("behavioral", r"职业规划|为什么选择|为什么不做|你的优缺点|优点和缺点|最棘手|学习新技术|学习方法|自学|氛围|同事|被push"),
+    ("project", r"项目|实习|简历|github|开源"),
+]]
+EXP_TOPICS = [(t, re.compile(rx, re.I)) for t, rx in [
+    ("redis", r"redis"),
+    ("mysql", r"mysql|innodb|索引|事务|隔离级别|" + _w("sql")),
+    ("network", _w("https?") + "|" + _w("tcp") + "|" + _w("udp") + r"|三次握手|四次挥手|socket|七层模型|拥塞|粘包"
+                r"|cookie|websocket|长连接"),
+    ("os", r"进程|线程|协程|死锁|虚拟内存|虚拟地址|分页|分段|页存储|段存储|epoll|用户态|内核|中断|信号量|spinlock|mutex"),
+    ("go", r"golang|goroutine|gmp|gorm|切片|" + _w("go") + "|" + _w("chan") + "|" + _w("channel") + "|" + _w("gin")),
+    ("java", r"(?<!rx)java(?!script)|jvm|hashmap|hashtable|hashset|arraylist|linkedlist|concurrenthashmap|spring"
+             r"|synchronized|类加载|双亲委派|stringbuilder"),
+    ("android", r"android|安卓|activity|recyclerview|handler|asynctask|glide|okhttp|retrofit|rxjava|jetpack"
+                r"|constraintlayout|约束布局|自定义 ?view|view 的绘制|事件分发|广播|service"),
+    ("mq", r"kafka|rabbitmq|rocketmq|消息队列"),
+    ("distributed-systems", r"分布式|raft|mapreduce|限流|负载均衡|熔断|" + _w("cap")),
+    ("kubernetes", r"k8s|kubernetes|kubectl|docker|容器的核心|和容器|" + _w("pod") + "|" + _w("cni")),
+    ("llm", r"transformer|lora|rope|位置编码|自注意力|reward|大模型|qwen|bert|多模态|" + _w("sft") + "|" + _w("dpo")),
+    ("rag", _w("rag")),
+    ("linux", r"linux|shell"),
+    ("design-patterns", r"设计模式|单例|工厂模式|观察者|依赖注入|" + _w("mvp") + "|" + _w("mvc") + "|" + _w("mvvm")),
+    ("algorithms", r"排序|快排|链表|二叉树|哈希表|散列表|红黑树|跳表|lru|动态规划|回溯|子串|子序列|leetcode|算法题|^算法[：:]"),
+]]
+
+
+def exp_text(text, first_person=True):
+    """One upstream line → question text. first_person: the line mixes in the author's own answer."""
+    text = EMOJI.sub("", clean(text)).replace("`", "")
+    text = re.sub(r"\$([^$]+)\$", r"\1", text)
+    text = re.sub(r"^下一个问题[，,]\s*", "", ASIDE.sub("", text).strip()).replace("： ", "：")
+    if first_person:
+        text = re.split(r"[，,。；;]\s*我(?!们)|我[：:]", text)[0]
+        text = re.sub(r"([？?])\s*[（(][^（）()]*[)）]$", r"\1", text)
+        m = re.match(r"^(.*[？?])([^？?]+)$", text)
+        if m and NARRATIVE.search(m.group(2)):
+            text = m.group(1)
+    return text.strip(" ，,。；;：:").rstrip("（(").strip()
+
+
+def keep(q):
+    return bool(q) and not SELF_INTRO.match(q) and not EXP_CONTEXT.search(q) and not EXP_JUNK.search(q)
+
+
+def reset_exp(key):
+    d = EXP_OUT / OUT_DIR[key]
+    for p in d.glob("*.yml"):  # generated; upstream may have dropped an interview
+        p.unlink()
+
+
+def write_exp(key, sha, path, meta, rounds, note=""):
+    """rounds: [{name, type?, duration?, notes?, questions: [{q, followups?}]}]; empty rounds are dropped."""
+    repo, lic = SOURCES[key]
+    seen, out_rounds, n = set(), [], 0
+    for r in rounds:
+        rtype = r.get("type") or ("hr" if "HR" in r["name"].upper() else "technical")
+        qs = []
+        for item in r.get("questions", []):
+            k = norm(item["q"])
+            if not k or k in seen:  # question ids are per file, so a repeat in a later round would collide
+                continue
+            seen.add(k)
+            out = {"q": item["q"]}
+            qtype = item.get("type") or rtype
+            if rtype != "hr":
+                qtype = next((t for t, rx in EXP_TYPES if rx.search(item["q"])), qtype)
+            if qtype != rtype:
+                out["type"] = qtype
+            topics = [t for t, rx in EXP_TOPICS if rx.search(item["q"])][:3]
+            if topics:
+                out["topics"] = topics
+            if item.get("followups"):
+                out["followups"] = list(dict.fromkeys(item["followups"]))
+            qs.append(out if len(out) > 1 else out["q"])
+        if not qs and not r.get("notes"):
+            continue
+        rd = {"name": r["name"], "type": rtype}
+        rd.update({f: r[f] for f in ("duration", "notes") if r.get(f)})
+        if qs:
+            rd["questions"] = qs
+        out_rounds.append(rd)
+        n += len(qs)
+    if not n:
+        print(f"  skip {path}: no questions")
+        return 0
+    doc = {k: meta[k] for k in ("company", "role", "level", "date", "department", "result") if meta.get(k)}
+    doc["lang"] = meta.get("lang", "zh")
+    view = "blob" if path.endswith(".md") else "tree"
+    doc["source"] = {"name": repo, "url": f"https://github.com/{repo}/{view}/{sha}/{quote(path)}", "license": lic,
+                     "commit": sha, "author": repo.split("/")[0]}
+    doc.update({k: meta[k] for k in ("summary", "notes") if meta.get(k)})
+    doc["rounds"] = out_rounds
+    rel = "-".join(x for x in (meta["company"], meta.get("date"), meta["role"]) if x) + ".yml"
+    out = EXP_OUT / OUT_DIR[key] / rel
+    out.parent.mkdir(parents=True, exist_ok=True)
+    header = (f"# GENERATED by tools/import_upstream.py from {repo}@{sha} ({lic}): {path}\n"
+              f"# Do not edit by hand. {note}".rstrip() + "\n")
+    out.write_text(header + yaml.safe_dump(flowify(doc), allow_unicode=True, sort_keys=False, width=1000),
+                   encoding="utf-8")
+    print(f"  {OUT_DIR[key]}/{rel}: {' → '.join(r['name'] for r in out_rounds)}, {n} questions")
+    return n
+
+
+ROUND_SEQ = "一二三四五六七八九"
+
+
+def round_rank(name):
+    return ROUND_SEQ.index(name[0]) if name[:1] in ROUND_SEQ else len(ROUND_SEQ)
+
+
+# jx888-max: 日常实习/<公司>/<YYYYMMDD>-<岗位>-<部门>/<MM-DD>-<轮次>/面筋.md, one numbered list per round.
+JX_LEVEL = {"日常实习": "intern", "暑期实习": "intern", "实习": "intern", "秋招": "campus", "校招": "campus"}
+JX_COMPANY = {"字节": "bytedance", "阿里": "alibaba", "快手": "kuaishou", "腾讯": "tencent", "美团": "meituan",
+              "百度": "baidu"}
+JX_ROLE = {"多模态算法测评": "algorithm", "大模型算法": "llm-algorithm", "支付算法实习生": "algorithm"}
+JX_SKIP = re.compile(r"^反问|进入反问|^无手撕|^无八股$|手撕过了")
+
+
+def imp_jx888(d, sha):
+    reset_exp("jx888")
+    n = 0
+    for idir in sorted(p for p in d.glob("*/*/*") if p.is_dir()):
+        m = re.fullmatch(r"(\d{4})(\d{2})\d{2}-(.+?)-(.+)", idir.name)
+        if not m:
+            continue
+        kind, company = idir.parent.parent.name, idir.parent.name
+        year, title, dept = m.group(1), m.group(3), m.group(4)
+        meta = {"company": JX_COMPANY.get(company), "role": JX_ROLE.get(title), "level": JX_LEVEL.get(kind),
+                "department": dept, "notes": f"上游岗位：{title}（{kind}）"}
+        if None in (meta["company"], meta["role"], meta["level"]):
+            print(f"  skip {idir.relative_to(d)}: map its company / role / level first")
+            continue
+        found = []
+        for f in idir.glob("*/面筋.md"):
+            rm = re.fullmatch(r"(\d{2})-(\d{2})-(.+)", f.parent.name)
+            if rm:
+                found.append((rm.group(1), rm.group(2), rm.group(3), f))
+        found.sort(key=lambda r: (r[0], r[1], round_rank(r[2])))
+        rounds = []
+        for mm, dd, name, f in found:
+            rnd, extra = {"name": name, "questions": []}, []
+            for line in f.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                dm = re.fullmatch(r"(?:一共)?(\d+)\s*min(?:左右)?", line)
+                qm = re.match(r"^(\d+)\s*[，,.、．]\s*(.+)$", line)
+                if dm:
+                    rnd["duration"] = int(dm.group(1))
+                elif qm and not JX_SKIP.search(qm.group(2)):
+                    text = re.sub(r"^(?:无)?八股[，,]\s*", "", qm.group(2))
+                    q = exp_text(re.sub(r"^(手撕|场景题)[，,]\s*", r"\1：", text))
+                    if keep(q):
+                        rnd["questions"].append({"q": q})
+                elif line and not qm:
+                    extra.append(line)  # e.g. 「75min面试+30min手撕」
+            rnd["notes"] = "；".join([f"{year}-{mm}-{dd}", *extra])
+            rounds.append(rnd)
+        if found:
+            meta["date"] = f"{year}-{found[0][0]}"
+        path = idir.relative_to(d).as_posix()
+        n += write_exp("jx888", sha, path, meta, rounds)
+    return n
+
+
+# Electronic-Waste: interview/<企业>.md, `## 一面` per round. Metadata from the README「面经」table
+# (企业 | 岗位 | 面试流程 | 结果); 「基架」 from the README's 简历 section. Ubiquant.md is a written test.
+EW_FILES = {
+    "ByteDance.md": dict(company="bytedance", role="infra", level="intern", result="rejected", department="基架",
+                         notes="上游岗位：系统工程实习生", mode="marked"),
+    "Intel.md": dict(company="intel", role="swe", level="intern", result="offer", department="BigDL-LLM组",
+                     notes="上游岗位：BigDL-LLM组实习生", mode="lines"),
+    "RisingWave.md": dict(company="risingwave", role="infra", level="intern", result="rejected",
+                          notes="上游岗位：数据库内核开发实习生", mode="lines"),
+    "Databend.md": dict(company="databend", role="infra", result="offer", notes="上游岗位：Cloud开发", mode="marked"),
+}
+EW_NARRATION = re.compile(r"^(?:首先|然后|之后|最后|这一次|一开始|开始提问|面试官(?:让|上来|切到|追问|说)|我|答[：:]|[（(])")
+
+
+def imp_ewaste(d, sha):
+    reset_exp("ewaste")
+    n = 0
+    for fname, meta in EW_FILES.items():
+        path = f"interview/{fname}"
+        rounds, cur, last, in_code, done = [], None, None, False, False
+        for line in (d / path).read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line.startswith("```"):
+                in_code = not in_code
+                continue
+            h = re.match(r"^## (.+)$", line)
+            if h:
+                cur, last, done = {"name": h.group(1).strip(), "questions": []}, None, False
+                rounds.append(cur)
+                continue
+            if in_code or cur is None or done or not line:
+                continue
+            if line.startswith("反问"):  # the candidate's own questions close the round
+                done = True
+                continue
+            m = re.match(r"^(Q|问|追问|面试官)[：:]\s*(.+)$", line)
+            if m:
+                kind, text = m.groups()
+                if kind == "面试官" and not text.endswith(("？", "?")):
+                    continue
+            elif re.match(r"(?i)^(leetcode|手撕|算法题)", line) or (meta["mode"] == "lines" and not EW_NARRATION.match(line)):
+                kind, text = "", line
+            else:
+                continue
+            q = exp_text(text)
+            if not keep(q):
+                if kind != "追问":
+                    last = None  # a follow-up of a skipped question stands on its own
+                continue
+            if kind == "追问" and last:
+                last.setdefault("followups", []).append(q)
+                continue
+            last = {"q": q}
+            cur["questions"].append(last)
+        n += write_exp("ewaste", sha, path, {k: v for k, v in meta.items() if k != "mode"}, rounds)
+    return n
+
+
+# CocaineCong: 【Golang开发面经】<公司>（N轮技术面）, `# 一面` per round, `## <question>` + the author's answer.
+# result only where the author says how it ended.
+CC_FILES = {
+    "a. 字节跳动.md": ("bytedance", None),
+    "b. B站.md": ("bilibili", "rejected"),     # 二面完一查结果就直接淘汰了
+    "c. 百度.md": ("baidu", "rejected"),       # 最终挂了
+    "d. 滴滴.md": ("didi", None),
+    "e. 米哈游.md": ("mihoyo", "rejected"),    # 标题「一轮游」；「但还是挂了」
+    "f. 深信服.md": ("sangfor", "withdrawn"),  # 但我想找toc的，就拒掉了
+    "i. 得物.md": ("dewu", None),
+    "k. 奇安信.md": ("qianxin", None),
+    "l. 360.md": ("qihoo-360", "rejected"),    # 标题「一轮游」
+    "m. 知乎.md": ("zhihu", None),
+    "n. 蔚来.md": ("nio", None),
+}
+CC_NOT_ROUNDS = {("e. 米哈游.md", "二面")}  # that heading only explains there was no second round
+CC_SKIP = {("e. 米哈游.md", "Go的GMP模型")}  # an answer sub-heading repeating the question above it
+CC_ASIDE = re.compile(r"[，,。]\s*(?:牛客上写过|easy|秒|常见题|这写不出来的话[，,]?就说不过去了)")
+
+
+def imp_cocainecong(d, sha):
+    reset_exp("cocainecong")
+    n = 0
+    for fname, (company, result) in CC_FILES.items():
+        text = (d / fname).read_text(encoding="utf-8")
+        title = re.search(r"^# (【.+?)\s*$", text, re.M)
+        meta = {"company": company, "role": "backend", "result": result,
+                "notes": f"上游标题：{title.group(1)}" if title else None}
+        rounds, cur, last, in_code = [], None, None, False
+        for line in text.splitlines():
+            if line.startswith("```"):
+                in_code = not in_code
+                continue
+            if in_code:
+                continue
+            h1 = re.match(r"^# (?:\d+\.\s*)?(.+?)\s*$", line)
+            if h1:
+                name, cur, last = h1.group(1), None, None
+                if re.fullmatch(r"[一二三四五六七八九]面|HR面", name) and (fname, name) not in CC_NOT_ROUNDS:
+                    cur = {"name": name, "questions": []}
+                    rounds.append(cur)
+                continue
+            if cur is None:
+                if not rounds and line.startswith(">") and "summary" not in meta:  # 写在前面
+                    meta["summary"] = exp_text(line.lstrip("> "), first_person=False)
+                continue
+            h2 = re.match(r"^## (.+?)\s*$", line)
+            if h2:
+                q = h2.group(1)
+                cur["seen_h2"] = True
+                if re.match(r"^\d+\.\d+\s", q) or (fname, q) in CC_SKIP or q.startswith("参考"):
+                    continue
+                q = exp_text(CC_ASIDE.sub("", re.sub(r"^\d+\.\s*", "", q)), first_person=False)
+                if not keep(q):
+                    last = None
+                elif last and (re.match(r"^(那|怎么解决|为什么是)", q) or (q.endswith("呢？") and len(q) <= 8)):
+                    last.setdefault("followups", []).append(q)
+                else:
+                    last = {"q": q}
+                    cur["questions"].append(last)
+                continue
+            if "seen_h2" not in cur and "notes" not in cur and line.strip() and not line.startswith(("#", "!", "|")):
+                cur["notes"] = exp_text(line.lstrip("> "), first_person=False)  # e.g. 又深挖项目，这次挖了快40分钟了
+        n += write_exp("cocainecong", sha, fname, meta, rounds)
+    return n
+
+
+# Pypy233: README lists these under「实习」(大二 SAP；大三 头条、阿里、大摩). `##`/`###` headings are rounds
+# (一面, 电面, AC面 > 一面, HR面) or topics (Java基础, 算法); leaf bullets are the questions.
+PY_FILES = {
+    "头条.md": dict(company="bytedance", role="infra", level="intern", notes="上游标题：头条基础架构岗"),
+    "阿里_蚂蚁金服.md": dict(company="ant-group", role="swe", level="intern", notes="上游标题：阿里 蚂蚁金服"),
+    "Morgan_Stanley.md": dict(company="morgan-stanley", role="swe", level="intern"),
+    "SAP-VT.md": dict(company="sap", role="swe", level="intern", notes="上游标题：SAP VT"),
+}
+PY_ROUND = re.compile(r"[一二三四五六七八九]面|HR面|电面|AC面|技术")
+PY_SECTION_SKIP = re.compile(r"反向|反问|笔试|无领导小组讨论")
+PY_SECTION_TYPE = {"算法": "coding", "扩展题": "system-design", "项目经历": "project"}
+PY_SKIP = re.compile(r"纠正了|自己问两个问题|不会就不问了")
+PY_SUBS = [(r"^啥都不会写个算法[:：]\s*", "手撕："), (r"\s+不会x?$", ""), (r"，将在做的研究项目水了一下$", "")]
+
+
+def imp_pypy233(d, sha):
+    reset_exp("pypy233")
+    n = 0
+    for fname, meta in PY_FILES.items():
+        lines = (d / fname).read_text(encoding="utf-8").splitlines()
+        bullets = [(i, len(m.group(1)), m.group(2)) for i, l in enumerate(lines) if (m := re.match(r"^(\s*)- (.+)$", l))]
+        indent_after = {a[0]: b[1] for a, b in zip(bullets, bullets[1:])}
+        rounds, cur, h2_round, qtype, skip = [], None, None, None, False
+        for i, line in enumerate(lines):
+            h = re.match(r"^(#{2,3}) (.+?)\s*$", line)
+            if h:
+                depth, name = len(h.group(1)), h.group(2)
+                qtype, skip = PY_SECTION_TYPE.get(name), bool(PY_SECTION_SKIP.search(name))
+                if PY_ROUND.fullmatch(name):
+                    if depth == 3 and h2_round is not None and not h2_round["questions"]:
+                        name = f"{h2_round['name']} {name}"  # AC面 > 一面
+                    cur = {"name": name, "questions": []}
+                    rounds.append(cur)
+                    if depth == 2:
+                        h2_round = cur
+                elif depth == 2 and skip:
+                    cur = None
+                continue
+            m = re.match(r"^(\s*)- (.+)$", line)
+            if not m or skip or indent_after.get(i, -1) > len(m.group(1)) or PY_SKIP.search(m.group(2)):
+                continue  # not a bullet, or a group header like 「- Java基础」 whose children are the questions
+            text = m.group(2)
+            for pat, rep in PY_SUBS:
+                text = re.sub(pat, rep, text)
+            q = exp_text(text)
+            if not keep(q):
+                continue
+            if cur is None:
+                cur = {"name": "面试", "notes": "上游未分轮次", "questions": []}
+                rounds.append(cur)
+            cur["questions"].append({"q": q, "type": qtype} if qtype else {"q": q})
+        n += write_exp("pypy233", sha, fname, meta, rounds)
+    return n
+
+
+# HurleyWong: docs/interview/<公司>.md, one numbered list per company (rounds are not separated; answers are
+# indented under each question). README: 面向 Android/Java 技术方向的校招面经; role is tagged from the questions.
+# result: docs/interview/Offer.md lists every offer, otherwise the file's 过程简述 says how it ended.
+HURLEY = {  # name: (company, role, result, department)
+    "阿里飞猪": ("alibaba", "android", "rejected", "飞猪"),            # 最终没有面试成功
+    "多益网络": ("duoyi", "android", "rejected", None),                 # 最终这次面试并没有成功
+    "海康威视": ("hikvision", "android", "offer", None),                # Offer.md
+    "交行软开": ("bankcomm", "swe", "offer", "软件开发中心"),             # Offer.md：交通银行软件开发中心
+    "金山WPS": ("kingsoft", "swe", None, None),
+    "墨迹天气": ("moji", "android", None, None),
+    "微博": ("weibo", "android", None, None),
+    "微信读书": ("tencent", "android", None, "微信读书"),
+    "新浪": ("sina", "android", None, None),
+    "永辉": ("yonghui", "swe", "offer", "永辉云创"),                     # Offer.md：永辉超市（永辉云创）
+    "中信银行信用卡中心": ("citic-bank", "swe", "rejected", "信用卡中心"),  # 最终在岗位对口程度上不太匹配
+    "Taptap": ("taptap", "android", "rejected", None),                 # 很遗憾错过了
+    "字节跳动": ("bytedance", "android", None, None),
+}
+# Not imported: 58同城 / 格力 / 农行数据中心 / 浙商银行 / 小米 list two questions each; 三七互娱 is a written test.
+HURLEY_ROUND_NOTES = {"交行软开": "上游写明一共两面，但题目没有按轮次分开", "永辉": "HR 和技术面一起面"}
+
+
+def imp_hurley(d, sha):
+    reset_exp("hurley")
+    n = 0
+    for name, (company, role, result, dept) in HURLEY.items():
+        path = f"docs/interview/{name}.md"
+        items, cur, in_code = [], None, False
+        for line in (d / path).read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("```"):
+                in_code = not in_code
+                continue
+            m = re.match(r"^\d+\.\s+(.+)$", line)
+            if m and not in_code:
+                cur = {"q": m.group(1).strip()}
+                cur["cont"] = cur["q"].endswith(("：", ":"))  # 「算法题：」 — the problem follows, indented
+                items.append(cur)
+            elif cur and cur["cont"] and not in_code and line.startswith("    ") and not line.strip().startswith("!"):
+                cur["q"] += " " + line.strip()
+        qs = []
+        for it in items:
+            q = exp_text(it["q"], first_person=False)
+            if len(q) > 600:
+                print(f"  skip a long question in {path}")
+            elif q and not SELF_INTRO.match(q) and not EXP_JUNK.search(q) and (it["cont"] or not EXP_CONTEXT.search(q)):
+                qs.append({"q": q})
+        meta = {"company": company, "role": role, "level": "campus", "result": result, "department": dept,
+                "notes": "上游未分轮次；仓库是 Android/Java 方向的校招面经，role 按题目内容标注"}
+        rounds = [{"name": "面试", "notes": HURLEY_ROUND_NOTES.get(name), "questions": qs}]
+        n += write_exp("hurley", sha, path, meta, rounds)
+    return n
+
+
 IMPORTERS = {"h5bp": imp_h5bp, "haizlin": imp_haizlin, "tih": imp_tih, "kdn251": imp_kdn251,
              "sdp": imp_sdp, "supergodog": imp_supergodog, "misterbooo": imp_misterbooo,
-             "javaguide": imp_javaguide}
+             "javaguide": imp_javaguide, "jx888": imp_jx888, "ewaste": imp_ewaste,
+             "cocainecong": imp_cocainecong, "pypy233": imp_pypy233, "hurley": imp_hurley}
 
 
 def main():
@@ -407,7 +840,8 @@ def main():
         total += IMPORTERS[key](d, sha)
         lic = next(iter(sorted(d.glob("LICENSE*"))), None)
         if lic:  # keep the upstream license text next to the imported files
-            (OUT / OUT_DIR[key] / "UPSTREAM-LICENSE.txt").write_text(
+            base = EXP_OUT if key in EXPERIENCE_SOURCES else OUT
+            (base / OUT_DIR[key] / "UPSTREAM-LICENSE.txt").write_text(
                 f"License of https://github.com/{SOURCES[key][0]} (commit {sha}):\n\n" + lic.read_text(encoding="utf-8"),
                 encoding="utf-8")
     print(f"total {total}")

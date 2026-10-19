@@ -11,24 +11,42 @@ companies:
   alibaba:     { name: 阿里巴巴, en: Alibaba, aliases: [阿里, 淘天, 淘宝, 天猫, 阿里云, aliyun, taobao] }
   ant-group:   { name: 蚂蚁集团, en: Ant Group, aliases: [蚂蚁, 支付宝, alipay, ant] }
   baidu:       { name: 百度, en: Baidu, aliases: [] }
+  bankcomm:    { name: 交通银行, en: Bank of Communications, aliases: [交行, 交行软开, 交通银行软件开发中心, bocom] }
   bilibili:    { name: 哔哩哔哩, en: Bilibili, aliases: [b站, B站] }
   bytedance:   { name: 字节跳动, en: ByteDance, aliases: [字节, 头条, 今日头条, 抖音, tiktok, 飞书, lark, douyin] }
+  citic-bank:  { name: 中信银行, en: China CITIC Bank, aliases: [中信, 中信银行信用卡中心] }
+  databend:    { name: Databend, en: Databend, aliases: [datafuse] }
   deepseek:    { name: 深度求索, en: DeepSeek, aliases: [] }
+  dewu:        { name: 得物, en: Dewu, aliases: [poizon] }
   didi:        { name: 滴滴, en: DiDi, aliases: [滴滴出行] }
+  duoyi:       { name: 多益网络, en: Duoyi, aliases: [多益] }
+  hikvision:   { name: 海康威视, en: Hikvision, aliases: [海康] }
   huawei:      { name: 华为, en: Huawei, aliases: [] }
   jd:          { name: 京东, en: JD.com, aliases: [jingdong, jd.com] }
+  kingsoft:    { name: 金山办公, en: Kingsoft Office, aliases: [金山, wps, 金山wps] }
   kuaishou:    { name: 快手, en: Kuaishou, aliases: [kwai] }
   meituan:     { name: 美团, en: Meituan, aliases: [] }
   mihoyo:      { name: 米哈游, en: miHoYo, aliases: [hoyoverse] }
   minimax:     { name: MiniMax, en: MiniMax, aliases: [稀宇] }
+  moji:        { name: 墨迹天气, en: Moji Weather, aliases: [墨迹] }
   moonshot:    { name: 月之暗面, en: Moonshot AI, aliases: [kimi] }
   netease:     { name: 网易, en: NetEase, aliases: [网易游戏, 网易雷火] }
+  nio:         { name: 蔚来, en: NIO, aliases: [蔚来汽车] }
   pinduoduo:   { name: 拼多多, en: PDD, aliases: [pdd, temu] }
+  qianxin:     { name: 奇安信, en: Qi An Xin, aliases: [qax] }
+  qihoo-360:   { name: 360, en: Qihoo 360, aliases: [奇虎, 奇虎360, 三六零] }
+  risingwave:  { name: RisingWave, en: RisingWave Labs, aliases: [] }
+  sangfor:     { name: 深信服, en: Sangfor, aliases: [] }
   shein:       { name: 希音, en: SHEIN, aliases: [] }
   shopee:      { name: Shopee, en: Shopee, aliases: [虾皮, sea] }
+  sina:        { name: 新浪, en: Sina, aliases: [] }
+  taptap:      { name: TapTap, en: TapTap, aliases: [心动, 心动网络, xd] }
   tencent:     { name: 腾讯, en: Tencent, aliases: [鹅厂, 微信, wechat, 腾讯游戏, 天美, 光子] }
+  weibo:       { name: 微博, en: Weibo, aliases: [新浪微博] }
   xiaohongshu: { name: 小红书, en: Xiaohongshu, aliases: [rednote, 红书] }
   xiaomi:      { name: 小米, en: Xiaomi, aliases: [] }
+  yonghui:     { name: 永辉超市, en: Yonghui, aliases: [永辉, 永辉云创] }
+  zhihu:       { name: 知乎, en: Zhihu, aliases: [] }
   zhipu:       { name: 智谱, en: Zhipu AI, aliases: [智谱ai, glm] }
   # —— 海外 ——
   adobe:          { name: Adobe, en: Adobe, aliases: [] }
@@ -40,14 +58,17 @@ companies:
   dropbox:        { name: Dropbox, en: Dropbox, aliases: [] }
   google:         { name: 谷歌, en: Google, aliases: [alphabet, deepmind, youtube] }
   hired:          { name: Hired, en: Hired, aliases: [] }
+  intel:          { name: 英特尔, en: Intel, aliases: [] }
   linkedin:       { name: 领英, en: LinkedIn, aliases: [] }
   lyft:           { name: Lyft, en: Lyft, aliases: [] }
   meta:           { name: Meta, en: Meta, aliases: [facebook, fb, instagram, whatsapp] }
   microsoft:      { name: 微软, en: Microsoft, aliases: [msft, 微软亚研, msra] }
+  morgan-stanley: { name: 摩根士丹利, en: Morgan Stanley, aliases: [大摩] }
   netflix:        { name: 奈飞, en: Netflix, aliases: [] }
   nvidia:         { name: 英伟达, en: NVIDIA, aliases: [] }
   openai:         { name: OpenAI, en: OpenAI, aliases: [] }
   palantir:       { name: Palantir, en: Palantir, aliases: [] }
+  sap:            { name: SAP, en: SAP, aliases: [思爱普] }
   slack:          { name: Slack, en: Slack, aliases: [] }
   snap:           { name: Snap, en: Snap, aliases: [snapchat] }
   stack-overflow: { name: Stack Overflow, en: Stack Overflow, aliases: [stackoverflow] }
@@ -154,3 +175,7 @@ topics:
   motivation: 求职动机
   failure: 失败与反思
   career: 职业规划
+  android: Android
+  linux: Linux
+  kubernetes: Kubernetes / 容器
+  design-patterns: 设计模式

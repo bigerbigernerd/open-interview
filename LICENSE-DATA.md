@@ -14,7 +14,8 @@ license your contribution under CC BY-SA 4.0 and confirm you have the right to d
 ## Third-party material
 
 Parts of the bank are imported from these projects. Each generated file in `bank/questions/imported/`
-names its upstream repository, commit and license, and every question keeps a link back to its source.
+and `bank/experiences/imported/` names its upstream repository, commit and license, and every question
+or interview report keeps a link back to its source.
 
 | Upstream | License | Copyright |
 |---|---|---|
@@ -27,6 +28,16 @@ names its upstream repository, commit and license, and every question keeps a li
 | [MisterBooo/llm-interview-questions](https://github.com/MisterBooo/llm-interview-questions) | CC BY-SA 4.0 | © the repository authors |
 | [Snailclimb/JavaGuide](https://github.com/Snailclimb/JavaGuide) | Apache-2.0 | © the JavaGuide authors |
 
+Interview reports (面经), each the upstream author's own interviews:
+
+| Upstream | License | Copyright |
+|---|---|---|
+| [CocaineCong/Golang-Interview](https://github.com/CocaineCong/Golang-Interview) | MIT | © 2022 FanOne |
+| [Electronic-Waste/My-Job-Hunting](https://github.com/Electronic-Waste/My-Job-Hunting) | MIT | © 2023 Shao Wang |
+| [HurleyWong/vuepress-interview-hurley](https://github.com/HurleyWong/vuepress-interview-hurley) | MIT | © 2021 Hurley |
+| [jx888-max/Interview-experience](https://github.com/jx888-max/Interview-experience) | MIT | © 2025 Yi Xuan |
+| [Pypy233/Interview-Collection](https://github.com/Pypy233/Interview-Collection) | MIT | © 2019 Yu Pan |
+
 MIT and Apache-2.0 licensed material is redistributed with its notices preserved by the attribution above
 and in each generated file's header. Only question text, short follow-ups and metadata were imported (plus the one-line "30 秒回答" summaries
-from the CC BY-SA source); full answers stay upstream and are linked. If you are an upstream author and want something changed or removed, open an issue.
+from the CC BY-SA source, and for 面经 the author's one-line remarks on a round or the whole interview); full answers stay upstream and are linked. If you are an upstream author and want something changed or removed, open an issue.

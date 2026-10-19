@@ -125,7 +125,7 @@ for grading.
 
 ## Question bank
 
-**4,273** questions from 8 permissively licensed open-source projects, each with a link back to its source:
+**4,796** questions (523 of them from 35 interview reports) from 13 permissively licensed open-source projects, each with a link back to its source. Question sources:
 
 | Source | Questions | Area | License |
 |---|---:|---|---|
@@ -149,7 +149,10 @@ Tags on every question:
 | `levels` / `difficulty` / `hot` | `campus`, `3`, `true` | Hiring track, 1-5, high frequency |
 
 Interview reports (面经, one real interview with its rounds) live in `bank/experiences/`; the interviewer mirrors
-their round structure when one exists. Template: [`bank/experiences/_template.yml`](bank/experiences/_template.yml).
+their round structure when one exists. There are **35** so far (523 questions): the upstream authors' own interviews from 5
+MIT-licensed repos, covering 30 companies including ByteDance, Alibaba, Tencent, Baidu, Kuaishou, Bilibili and
+miHoYo, mostly back-end, Android and infrastructure roles. Company, rounds, date and result are only filled in
+where the author stated them. Sources are listed in [LICENSE-DATA.md](LICENSE-DATA.md). Template: [`bank/experiences/_template.yml`](bank/experiences/_template.yml).
 
 Query from the command line:
 

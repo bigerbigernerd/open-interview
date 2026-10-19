@@ -98,3 +98,6 @@ PR 不需要提交重新生成的 `index.json`，合并到 main 后 CI 会自动
 1. 确认对方的许可证允许再分发（MIT / Apache-2.0 / BSD / CC BY / CC BY-SA / CC0）。没有许可证的仓库不能导入。
 2. 在 `tools/import_upstream.py` 的 `SOURCES` 里登记，写一个 `imp_xxx` 函数，只导入题目文本和简短元数据。
 3. 运行 `python3 tools/import_upstream.py xxx`，抽查生成的文件，然后在 `LICENSE-DATA.md` 的表格里加上署名。
+
+面经来源还要多一条：必须是仓库作者（或 PR 贡献者）本人的面试，转载牛客 / 小红书 / 知乎帖子的合集不行。
+导入的面经生成到 `bank/experiences/imported/<来源>/`，公司、岗位、轮次、日期、结果只写上游写明的，没写就不填。

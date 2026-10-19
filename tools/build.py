@@ -174,7 +174,9 @@ def load_experience_file(path, tags, rep):
     for k in doc:
         if k not in EXP_KEYS:
             rep.err(where, f"unknown field '{k}'")
-    for k in ("company", "role", "date", "rounds"):
+    # Imported 面经 may leave date out when the upstream author never said when the interview was.
+    required = ("company", "role", "rounds") if "/imported/" in where else ("company", "role", "date", "rounds")
+    for k in required:
         if not doc.get(k):
             rep.err(where, f"'{k}' is required")
     if doc.get("company") and doc["company"] not in tags["companies"]:
@@ -195,7 +197,8 @@ def load_experience_file(path, tags, rep):
             "levels": [doc["level"]] if doc.get("level") else []}
     exp = {k: doc[k] for k in ("company", "role", "level", "date", "department", "location", "result",
                                "summary", "notes") if doc.get(k) is not None}
-    exp["date"] = date
+    if date:
+        exp["date"] = date
     exp["lang"] = lang
     exp["rounds"] = []
     items = []
