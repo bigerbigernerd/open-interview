@@ -1,0 +1,61 @@
+num: 4
+id: roc-auc
+title:
+  zh: 手写 AUC
+  en: ROC AUC from scratch
+difficulty: medium
+track: ml
+topics: [metrics, auc, ranking, sorting]
+roles: [algorithm, llm-algorithm]
+entry: roc_auc
+time_limit: 2
+statement:
+  zh: |
+    实现 `roc_auc(y_true, y_score)`，返回 ROC 曲线下面积（一个 float）。搜广推面试的经典手撕题。
+
+    AUC 等于：随机取一个正样本和一个负样本，正样本分数更高的概率。**分数相同算 0.5。**
+
+    - `y_true`：形状 `(n,)`，取值 0/1，保证正负样本都有。
+    - `y_score`：形状 `(n,)` 的 float，可能有很多重复值。
+    - 有一个 n = 50000 的用例限时 0.3 秒，O(P·N) 两两比较会超时，需要 O(n log n)。
+
+    **示例**
+    ```
+    y_true  = [0, 0, 1, 1]
+    y_score = [0.1, 0.4, 0.35, 0.8]
+    → 0.75
+    ```
+  en: |
+    Implement `roc_auc(y_true, y_score)` and return the area under the ROC curve as a float. A classic
+    hand-coding question in search / ads / recommendation interviews.
+
+    AUC is the probability that a random positive scores higher than a random negative. **Ties count 0.5.**
+
+    - `y_true`: shape `(n,)`, values 0/1, with both classes present.
+    - `y_score`: floats of shape `(n,)`, possibly with many repeated values.
+    - One case has n = 50000 and a 0.3 s limit, so comparing all P·N pairs times out; aim for O(n log n).
+
+    **Example**
+    ```
+    y_true  = [0, 0, 1, 1]
+    y_score = [0.1, 0.4, 0.35, 0.8]
+    → 0.75
+    ```
+hints:
+  zh:
+    - 把所有样本按分数排序，正样本的秩（rank）之和能直接算出 AUC：(Σ rank_pos - P(P+1)/2) / (P·N)。
+    - 分数相同的样本要用平均秩，np.unique(..., return_index=True, return_counts=True) 可以帮你找到每组的位置。
+  en:
+    - After sorting by score, the rank sum of the positives gives AUC directly - (Σ rank_pos - P(P+1)/2) / (P·N).
+    - Tied scores need their average rank; np.unique(..., return_index=True, return_counts=True) finds each group.
+followups:
+  zh:
+    - 为什么 AUC 对正负样本比例不敏感？什么时候你会改看 PR-AUC？
+    - 线上 AUC 涨了但业务指标没涨，可能是什么原因？GAUC 是怎么算的、解决什么问题？
+    - 数据量大到一台机器放不下时，怎么分布式地算 AUC？
+    - AUC 能直接作为损失函数优化吗？有哪些近似方法？
+  en:
+    - Why is AUC insensitive to class balance, and when would you look at PR-AUC instead?
+    - Offline AUC went up but the business metric didn't - why might that be? What is GAUC and what does it fix?
+    - How would you compute AUC when the data doesn't fit on one machine?
+    - Can AUC be optimized directly as a loss? What approximations exist?

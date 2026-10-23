@@ -10,7 +10,7 @@ time, follow-ups, then a scored report. Questions are read aloud and you answer 
 
 [中文](README.md) · **English**
 
-[Web interview](#option-1-web-interview-recommended) · [Inside your agent](#option-2-inside-your-agent) · [Practice online](https://bigerbigernerd.github.io/open-interview/) · [Question bank](#question-bank) · [Contribute](CONTRIBUTING.md)
+[Web interview](#option-1-web-interview-recommended) · [Inside your agent](#option-2-inside-your-agent) · [allclose · 手撕](#allclose--手撕-ml--llm-coding-judged-locally) · [Practice online](https://bigerbigernerd.github.io/open-interview/) · [Question bank](#question-bank) · [Contribute](CONTRIBUTING.md)
 
 </div>
 
@@ -23,13 +23,14 @@ time, follow-ups, then a scored report. Questions are read aloud and you answer 
 - This project normalises open-source questions into one **tagged, sourced** format that anyone can extend by pull
   request. The interviewer runs on the agent you are already logged in to: no API key, no extra cost.
 
-## Three ways to use it
+## Four ways to use it
 
 | | For | Start with |
 |---|---|---|
 | **Web interview** (recommended) | Open a page and start | `python3 skills/mock-interviewer/scripts/studio.py` |
 | **Inside your agent** | You already live in Claude Code / Codex | Install the skill, say "mock interview me by voice" |
 | **Practice online** | Nothing to install, just drill questions | [GitHub Pages](https://bigerbigernerd.github.io/open-interview/) |
+| **allclose · 手撕** | Hand-coding rounds for LLM / ML roles | The 手撕 tab in the web app, or `skills/allclose/scripts/allclose.py` |
 
 ## Option 1: web interview (recommended)
 
@@ -123,6 +124,51 @@ for grading.
 - Locally: the page opened by `studio.py` or `voice.py start`
 - Online: enable GitHub Pages (Source: GitHub Actions) and it deploys to `https://bigerbigernerd.github.io/open-interview/`
 
+## allclose · 手撕: ML / LLM coding, judged locally
+
+![allclose · 手撕: write the code, judge it locally, answer the follow-ups](docs/allclose.png)
+
+LeetCode for ML and LLM interviews ("手撕" is the Chinese interview term for coding something by hand). Write
+attention, RoPE, a KV-cache step, top-p, BPE, DPO, GRPO… in numpy in the browser editor and press Submit. Your
+code runs in a separate Python process **on your own machine** and is compared with a reference on every case;
+it passes when it is within `rtol 1e-5 / atol 1e-6`, i.e. `np.allclose`. Nothing is uploaded and there is no online judge.
+
+- **Tests aimed at the usual bugs**: overflow on large values, masking in the wrong place, splitting heads
+  without a transpose, RoPE pairing, the token that crosses top-p, biased vs unbiased BatchNorm variance, tied
+  AUC scores… Every problem ships buggy variants, and CI checks that the tests catch all of them.
+- **Failures say exactly what is wrong**: the case, the position, expected value, your output, max error, and whatever you `print`.
+- **Follow-up questions once you pass**: in a real interview the code is only the start. The Claude Code / Codex /
+  agy / Cursor / OpenCode CLI on your machine plays the interviewer, asks three questions about your code (why
+  divide by √d? what if -inf becomes -1e9?) and scores you. When stuck, it can look at your code and give a hint.
+- **One file for the web and the CLI**: your code lives in `~/allclose/<problem>.py`; edit it in VS Code, submit it from the page, or the other way round.
+
+| Track | Problems | |
+|---|---|---|
+| LLM | 18 | Attention with masking · Multi-head attention · RoPE · Temperature + top-k + top-p sampling · GQA · One decoding step with a KV cache · SwiGLU · LoRA · Beam search · Byte-level BPE training · MoE routing + load-balancing loss · DPO · PPO clipped objective · GRPO · Merging partial attention results (the core of FlashAttention) · CLIP contrastive loss · int8 quantization · Speculative decoding verification |
+| Deep learning | 8 | Stable softmax · Cross-entropy with label smoothing · LayerNorm · RMSNorm · BatchNorm with running stats · AdamW · MLP backprop by hand · conv2d |
+| ML basics | 4 | ROC AUC · Logistic regression · K-means · IoU + NMS |
+
+10 easy, 14 medium, 6 hard; statements in Chinese and English.
+
+```bash
+# Web: same server as the mock interview, then open the 手撕 tab
+python3 open-interview/skills/mock-interviewer/scripts/studio.py
+
+# CLI
+cd open-interview/skills/allclose
+python3 scripts/allclose.py --lang en list    # ✓ = passed
+python3 scripts/allclose.py pull attention    # creates ~/allclose/attention.py; use any editor
+python3 scripts/allclose.py test attention    # all cases; --run for the samples only
+python3 scripts/allclose.py --lang en hint attention
+```
+
+Judging needs numpy: the current Python if it has numpy, otherwise `uv run --with numpy` when
+[uv](https://docs.astral.sh/uv/) is installed, otherwise `pip install numpy`. The online page (GitHub Pages)
+shows the problems and keeps drafts, but judging and follow-ups run locally.
+
+Inside Claude Code / Codex: install the `allclose` skill and ask for "an LLM coding problem"; the agent sets one,
+judges your file locally and asks follow-ups once it passes. The problem format is in [skills/allclose/SKILL.md](skills/allclose/SKILL.md).
+
 ## Question bank
 
 **5,166** questions (893 of them from 60 interview reports) from 18 permissively licensed open-source projects, each with a link back to its source. Question sources:
@@ -171,6 +217,11 @@ bank/
   tags.yml                  controlled tags: companies (with aliases), roles (with parents), types, levels, topics
   questions/                questions; imported/ is generated from upstream, do not edit by hand
   experiences/              interview reports, one file per interview
+skills/allclose/            allclose · 手撕 (installable on its own)
+  problems/<id>/            one folder per problem: statement, starter, reference, tests, buggy variants
+  scripts/allclose.py       CLI + judge (stdlib only)
+  scripts/runner.py         runs your code in a separate process (needs numpy)
+  data/problems.json        generated by tools/build.py
 skills/mock-interviewer/    the installable skill
   SKILL.md                  interviewer workflow
   scripts/bank.py           question queries (stdlib only)
@@ -179,7 +230,7 @@ skills/mock-interviewer/    the installable skill
   scripts/backends.py       adapters that run local agent CLIs
   ui/                       interview + practice page (no dependencies, no build)
   data/index.json           question index built by tools/build.py
-tools/build.py              validate bank/ and build the index
+tools/build.py              validate bank/ and the allclose problems, build the indexes
 tools/import_upstream.py    re-import upstream question banks
 schema/                     JSON Schema for editor autocompletion of the YAML files
 ```
@@ -198,8 +249,11 @@ non-git users can submit an interview report through the issue form.
 - [ ] OpenAI-compatible API key support on the online page (DeepSeek, Qwen, Ollama), so no agent is needed
 - [ ] Cross-source de-duplication and difficulty calibration
 - [ ] More roles: data, QA, SRE, product
+- [ ] 手撕: PyTorch problems (autograd, custom Functions) and more LLM training / inference problems
+- [ ] 手撕: judge in the browser with Pyodide on the online page (still on your machine)
+- [ ] 手撕: "asked at" company tags backed by interview reports
 
 ## License
 
-Code: MIT ([LICENSE](LICENSE)). Question bank: CC BY-SA 4.0; third-party sources and licenses in
+Code and the allclose problems: MIT ([LICENSE](LICENSE)). Question bank: CC BY-SA 4.0; third-party sources and licenses in
 [LICENSE-DATA.md](LICENSE-DATA.md).

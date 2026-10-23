@@ -1,0 +1,55 @@
+num: 10
+id: batch-norm
+title:
+  zh: BatchNorm 训练前向（含 running stats）
+  en: BatchNorm training forward with running stats
+difficulty: medium
+track: dl
+topics: [normalization, batchnorm, training-vs-inference]
+roles: [algorithm, llm-algorithm]
+entry: batch_norm_train
+statement:
+  zh: |
+    实现训练模式下的 BatchNorm 前向，并更新滑动统计量，行为和 PyTorch 的 `nn.BatchNorm1d/2d` 一致：
+
+    `batch_norm_train(x, gamma, beta, running_mean, running_var, momentum=0.1, eps=1e-5)`
+    返回 `(y, new_running_mean, new_running_var)`。
+
+    - `x`：`(N, C)` 或 `(N, C, H, W)`，通道在第 1 维；在**除通道外的所有维**上求均值、方差。
+    - 归一化用**有偏**方差（除以 n）：`y = (x - μ) / sqrt(σ² + eps) * gamma + beta`，`gamma`、`beta`、running 统计量都是 `(C,)`。
+    - 更新 running 统计量用**无偏**方差（除以 n-1），n 是每个通道参与统计的元素个数：
+      `new = (1 - momentum) * running + momentum * batch_stat`
+    - 不要原地修改传进来的 running_mean / running_var。
+  en: |
+    Implement BatchNorm's training-mode forward pass with the running-statistics update, matching PyTorch's
+    `nn.BatchNorm1d/2d`:
+
+    `batch_norm_train(x, gamma, beta, running_mean, running_var, momentum=0.1, eps=1e-5)`
+    returns `(y, new_running_mean, new_running_var)`.
+
+    - `x`: `(N, C)` or `(N, C, H, W)` with channels on axis 1; reduce over **every axis except the channel axis**.
+    - Normalize with the **biased** variance (divide by n): `y = (x - μ) / sqrt(σ² + eps) * gamma + beta`;
+      `gamma`, `beta` and the running stats are `(C,)`.
+    - Update the running stats with the **unbiased** variance (divide by n-1), where n is the number of elements
+      per channel: `new = (1 - momentum) * running + momentum * batch_stat`
+    - Don't modify the running_mean / running_var you are given in place.
+hints:
+  zh:
+    - 先算出要归约的轴：`axes = (0,) + tuple(range(2, x.ndim))`。
+    - 把 `(C,)` 的参数 reshape 成 `(1, C, 1, 1)`（或 `(1, C)`）再广播。
+    - 无偏方差 = 有偏方差 × n / (n - 1)。
+  en:
+    - "Work out the reduction axes first: `axes = (0,) + tuple(range(2, x.ndim))`."
+    - Reshape the `(C,)` parameters to `(1, C, 1, 1)` (or `(1, C)`) before broadcasting.
+    - Unbiased variance = biased variance × n / (n - 1).
+followups:
+  zh:
+    - 训练和推理时 BatchNorm 的行为有什么不同？推理时 batch size 为 1 会怎样？
+    - 为什么 running_var 用无偏方差，而归一化用有偏方差？
+    - 多卡训练时 BatchNorm 有什么问题？SyncBN 怎么解决？
+    - 为什么 Transformer 和大模型基本不用 BatchNorm？
+  en:
+    - How does BatchNorm differ between training and inference? What happens with batch size 1 at inference?
+    - Why is the running variance unbiased while the normalization uses the biased variance?
+    - What goes wrong with BatchNorm in multi-GPU training, and how does SyncBN fix it?
+    - Why do Transformers and LLMs rarely use BatchNorm?

@@ -1,0 +1,55 @@
+num: 26
+id: grpo-loss
+title:
+  zh: GRPO 损失（组内优势 + KL）
+  en: GRPO loss (group-relative advantages + KL)
+difficulty: medium
+track: llm
+topics: [rlhf, grpo, reasoning, deepseek]
+roles: [llm-algorithm]
+entry: grpo_loss
+statement:
+  zh: |
+    实现 DeepSeekMath / R1 用的 GRPO 损失（按 TRL 的约定）：
+
+    `grpo_loss(logp_new, logp_old, logp_ref, rewards, mask, clip_eps=0.2, beta=0.04, eps=1e-4)`
+    返回 `(loss, advantages)`。
+
+    - B 个问题，每个采样 G 个回答。`logp_new / logp_old / logp_ref`：`(B, G, T)`，当前策略、采样时策略、参考模型的逐 token 对数概率；`rewards`：`(B, G)`；`mask`：`(B, G, T)`，0/1，每个回答至少有一个 1。
+    - **组内优势**：`A = (r - mean_G(r)) / (std_G(r) + eps)`，在每个问题的 G 个回答内算，std 用**无偏**估计（ddof=1，和 `torch.std` 一致）。每个回答的所有 token 共用这个 A。
+    - `ratio = exp(logp_new - logp_old)`，`surr = min(ratio·A, clip(ratio, 1-ε, 1+ε)·A)`
+    - KL 用 k3 估计：`kl = exp(logp_ref - logp_new) - (logp_ref - logp_new) - 1`
+    - 逐 token 损失 `-(surr - beta·kl)`；**先在每个回答内按 mask 求平均，再对 B·G 个回答求平均**，得到 float `loss`。
+    - 同时返回 `advantages`，形状 `(B, G)`。
+  en: |
+    Implement the GRPO loss of DeepSeekMath / R1, following TRL's conventions:
+
+    `grpo_loss(logp_new, logp_old, logp_ref, rewards, mask, clip_eps=0.2, beta=0.04, eps=1e-4)`
+    returns `(loss, advantages)`.
+
+    - B prompts with G sampled answers each. `logp_new / logp_old / logp_ref`: `(B, G, T)` per-token log-probs under the current policy, the sampling policy and the reference model; `rewards`: `(B, G)`; `mask`: `(B, G, T)` of 0/1 with at least one 1 per answer.
+    - **Group-relative advantage**: `A = (r - mean_G(r)) / (std_G(r) + eps)` within each prompt's G answers, using the **unbiased** std (ddof=1, like `torch.std`). Every token of an answer shares its A.
+    - `ratio = exp(logp_new - logp_old)`, `surr = min(ratio·A, clip(ratio, 1-ε, 1+ε)·A)`
+    - KL via the k3 estimator: `kl = exp(logp_ref - logp_new) - (logp_ref - logp_new) - 1`
+    - Per-token loss `-(surr - beta·kl)`; **average over each answer's masked tokens first, then over the B·G answers** to get the float `loss`.
+    - Also return `advantages`, shaped `(B, G)`.
+hints:
+  zh:
+    - "`rewards.std(axis=1, ddof=1, keepdims=True)`；A 用 `A[:, :, None]` 广播到 token 维。"
+    - 组内奖励全一样时 std 是 0，A 就是 0，这正是 eps 的作用。
+    - 先 `(per_token * mask).sum(-1) / mask.sum(-1)` 得到每个回答的损失，再整体 `.mean()`。
+  en:
+    - "`rewards.std(axis=1, ddof=1, keepdims=True)`; broadcast A over tokens with `A[:, :, None]`."
+    - When all rewards in a group are equal the std is 0 and A is 0; that is what eps is for.
+    - "Get each answer's loss with `(per_token * mask).sum(-1) / mask.sum(-1)`, then take `.mean()`."
+followups:
+  zh:
+    - GRPO 为什么不需要 value model？组内归一化起了什么作用？
+    - k3 KL 估计有什么性质？为什么不直接用 log 比值？
+    - 按回答平均和按全部 token 平均（DAPO 的做法）对长回答有什么不同影响？
+    - 如果一组回答的奖励全对或全错，这组样本还有梯度吗？DAPO 的 dynamic sampling 怎么处理？
+  en:
+    - Why does GRPO need no value model, and what does group normalization do?
+    - What properties does the k3 KL estimator have, and why not use the plain log ratio?
+    - How do per-answer averaging and all-token averaging (as in DAPO) treat long answers differently?
+    - If every answer in a group is right (or wrong), does that group still give gradient? How does DAPO's dynamic sampling handle it?

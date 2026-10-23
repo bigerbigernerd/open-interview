@@ -101,3 +101,27 @@ PR 不需要提交重新生成的 `index.json`，合并到 main 后 CI 会自动
 
 面经来源还要多一条：必须是仓库作者（或 PR 贡献者）本人的面试，转载牛客 / 小红书 / 知乎帖子的合集不行。
 导入的面经生成到 `bank/experiences/imported/<来源>/`，公司、岗位、轮次、日期、结果只写上游写明的，没写就不填。
+
+## 出一道手撕题（allclose）
+
+`skills/allclose/problems/<id>/` 一题一个文件夹，照着已有的题抄一份改最快：
+
+| 文件 | 内容 |
+|---|---|
+| `problem.yml` | `num`（编号，不能写成 `no`，YAML 会把它当成 false）、中英标题、`difficulty`、`track`（ml / dl / llm）、`topics`、`entry`（函数名）、中英题面、提示、通过后的追问 |
+| `starter.py` | 函数签名 + 一行说明 + `raise NotImplementedError` |
+| `solution.py` | 参考答案。只用 numpy 和标准库 |
+| `tests.py` | `cases()` 返回用例列表：`dict(name=..., kwargs=..., sample=True)`；`sample` 的用例「运行」时会跑。可选 `limit`（秒）、`rtol`、`atol` |
+| `wrong.py` | 至少一个典型错误写法（漏了数值稳定、轴弄错、约定写反……），函数签名和题目一样 |
+
+题面要把约定写死（形状、哪一维、平局怎么处理、eps 加在哪），否则不同的正确写法会被判错。
+测试除了随机用例，至少要有：样例、边界（长度 1、全相等、全被 mask）、数值稳定（上千的 logits）。
+
+```bash
+pip install pyyaml numpy
+python3 tools/build.py                                   # 校验并生成 skills/allclose/data/problems.json
+python3 skills/allclose/scripts/allclose.py check <id>   # 参考答案必须通过；模板和 wrong.py 里每个写法都必须被抓出来
+```
+
+题目要求原创，或者来自许可证允许再分发的项目（在 `problem.yml` 的 `source` 里写明出处）。
+「哪家公司考过」只在有面经出处时才加：`companies: [{company: bytedance, source: <面经链接>}]`。

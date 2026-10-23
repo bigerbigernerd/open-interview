@@ -1,7 +1,7 @@
 {
   "name": "open-interview",
   "version": "0.1.0",
-  "description": "Mock interviews from an open, tagged question bank: text or voice (free browser TTS/STT), graded feedback, 面经 contributions",
+  "description": "Mock interviews from an open, tagged question bank: text or voice (free browser TTS/STT), graded feedback, 面经 contributions; plus allclose · 手撕, ML / LLM hand-coding problems judged locally",
   "author": {
     "name": "open-interview contributors"
   },
@@ -12,6 +12,11 @@
     "面试",
     "面经",
     "voice",
-    "career"
+    "career",
+    "allclose",
+    "手撕",
+    "llm",
+    "machine-learning",
+    "leetcode"
   ]
 }

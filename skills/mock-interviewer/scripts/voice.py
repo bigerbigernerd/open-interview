@@ -45,6 +45,18 @@ HOME = Path(os.environ.get("MOCK_INTERVIEWER_HOME", Path.home() / ".mock-intervi
 STATE = HOME / "bridge.json"
 HEADER = "X-Requested-With"
 HEADER_VALUE = "open-interview"
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]"}
+
+
+def allclose_routes(ai=None):
+    """The allclose · 手撕 judge routes when the allclose skill sits next to this one, else ({}, {})."""
+    scripts = SKILL.parent / "allclose" / "scripts"
+    if not (scripts / "allclose.py").exists():
+        return {}, {}
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    import allclose
+    return allclose.routes(ai)
 
 
 # ---------------- server ----------------
@@ -153,7 +165,18 @@ def make_handler(bridge, get_routes=None, post_routes=None):
             n = int(self.headers.get("Content-Length") or 0)
             return json.loads(self.rfile.read(n) or b"{}")
 
+        def _foreign_host(self):
+            # DNS rebinding guard: a page on evil.example resolving to 127.0.0.1 would still send its own Host.
+            host = self.headers.get("Host", "")
+            name = host[:host.index("]") + 1] if host.startswith("[") and "]" in host else host.split(":")[0]
+            if name in LOCAL_HOSTS:
+                return False
+            self._json({"error": "forbidden host"}, 403)
+            return True
+
         def do_GET(self):
+            if self._foreign_host():
+                return
             u = urlparse(self.path)
             qs = {k: v[0] for k, v in parse_qs(u.query).items()}
             if u.path in get_routes:
@@ -181,6 +204,8 @@ def make_handler(bridge, get_routes=None, post_routes=None):
             return self._file(target)
 
         def do_POST(self):
+            if self._foreign_host():
+                return
             if self.headers.get(HEADER) != HEADER_VALUE:  # blocks cross-site form posts
                 return self._json({"error": "missing header"}, 403)
             u = urlparse(self.path)
@@ -220,7 +245,7 @@ def free_port(preferred):
 def serve(port):
     log = HOME / "sessions" / time.strftime("%Y%m%d-%H%M%S.jsonl")
     bridge = Bridge(log)
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(bridge))
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(bridge, *allclose_routes()))
     httpd.daemon_threads = True
     HOME.mkdir(parents=True, exist_ok=True)
     STATE.write_text(json.dumps({"port": port, "pid": os.getpid(), "log": str(log)}))

@@ -1,0 +1,46 @@
+num: 13
+id: logistic-regression
+title:
+  zh: 逻辑回归（梯度下降训练）
+  en: Logistic regression trained with gradient descent
+difficulty: easy
+track: ml
+topics: [logistic-regression, gradient-descent, regularization]
+roles: [algorithm]
+entry: logistic_regression
+statement:
+  zh: |
+    用全量梯度下降训练逻辑回归：`logistic_regression(X, y, lr=0.1, epochs=100, l2=0.0)`，返回 `(w, b)`。
+
+    - `X`：`(N, D)`，`y`：`(N,)` 取值 0/1。`w` 初始化为 0 向量，`b` 初始化为 0.0。
+    - 损失：`mean(BCE(sigmoid(X w + b), y)) + (l2 / 2) · ||w||²`（**bias 不做正则**）。
+    - 每个 epoch 用全部数据算一次梯度并更新：
+      `dw = Xᵀ (p - y) / N + l2 · w`，`db = mean(p - y)`，`w -= lr · dw`，`b -= lr · db`。
+    - 返回 `w`（形状 `(D,)`）和 `b`（float）。
+  en: |
+    Train logistic regression with full-batch gradient descent: `logistic_regression(X, y, lr=0.1, epochs=100, l2=0.0)`,
+    returning `(w, b)`.
+
+    - `X`: `(N, D)`, `y`: `(N,)` with values 0/1. Start from `w = 0` and `b = 0.0`.
+    - Loss: `mean(BCE(sigmoid(X w + b), y)) + (l2 / 2) · ||w||²` (**the bias is not regularized**).
+    - Each epoch computes one gradient on all data and updates:
+      `dw = Xᵀ (p - y) / N + l2 · w`, `db = mean(p - y)`, `w -= lr · dw`, `b -= lr · db`.
+    - Return `w` (shape `(D,)`) and `b` (a float).
+hints:
+  zh:
+    - sigmoid 的梯度和 BCE 合在一起之后，对 logits 的梯度就是 `p - y`。
+    - 先把 w、b 一起算出梯度再更新，别用已经更新过的 w 去算 b 的梯度。
+  en:
+    - Combined with BCE, the gradient w.r.t. the logits is simply `p - y`.
+    - Compute both gradients before updating; don't use the already-updated w for b's gradient.
+followups:
+  zh:
+    - 逻辑回归为什么用交叉熵而不用 MSE 当损失？
+    - 数据线性可分时，不加正则会发生什么？
+    - L1 和 L2 正则分别有什么效果？为什么 L1 能产生稀疏解？
+    - 特征量级差很多时会有什么问题？你会怎么处理？
+  en:
+    - Why does logistic regression use cross-entropy rather than MSE?
+    - What happens without regularization when the data is linearly separable?
+    - What do L1 and L2 regularization each do, and why does L1 give sparse solutions?
+    - What goes wrong when features have very different scales, and how would you fix it?

@@ -1,0 +1,62 @@
+num: 2
+id: cross-entropy
+title:
+  zh: 交叉熵损失（带 label smoothing）
+  en: Cross-entropy loss with label smoothing
+difficulty: easy
+track: dl
+topics: [loss, cross-entropy, log-sum-exp, label-smoothing]
+roles: [llm-algorithm, algorithm]
+entry: cross_entropy
+statement:
+  zh: |
+    实现分类任务的交叉熵损失 `cross_entropy(logits, labels, label_smoothing=0.0)`，返回 batch 上的平均值（一个 float）。
+
+    - `logits`：形状 `(N, C)`，没有经过 softmax。
+    - `labels`：形状 `(N,)` 的整数，取值在 `[0, C)`。
+    - `label_smoothing = ε`：目标分布从 one-hot 变成 `q = (1-ε)·onehot + ε/C`（和 PyTorch 的定义一致），
+      每个样本的损失是 `-Σ_c q_c · log p_c`，其中 `p = softmax(logits)`。
+
+    测试里有差距上千的 logits，`np.log(softmax(x))` 会得到 `log(0) = -inf`。
+
+    **示例**
+    ```
+    logits = [[2.0, 1.0, 0.1]], labels = [0]
+    → 0.4170
+    ```
+  en: |
+    Implement classification cross-entropy `cross_entropy(logits, labels, label_smoothing=0.0)` and return
+    the mean over the batch (a float).
+
+    - `logits`: shape `(N, C)`, not softmaxed.
+    - `labels`: integers of shape `(N,)` in `[0, C)`.
+    - `label_smoothing = ε`: the target becomes `q = (1-ε)·onehot + ε/C` (PyTorch's definition), and each
+      sample's loss is `-Σ_c q_c · log p_c` with `p = softmax(logits)`.
+
+    Some tests have logits thousands apart, where `np.log(softmax(x))` hits `log(0) = -inf`.
+
+    **Example**
+    ```
+    logits = [[2.0, 1.0, 0.1]], labels = [0]
+    → 0.4170
+    ```
+hints:
+  zh:
+    - 不要先算概率再取 log，直接算 log_softmax = x - logsumexp(x)。
+    - logsumexp(x) = m + log Σ exp(x - m)，m 取每行最大值。
+    - 取出每行标签那一列可以用 logp[np.arange(N), labels]。
+  en:
+    - Don't take the log of probabilities; compute log_softmax = x - logsumexp(x) directly.
+    - logsumexp(x) = m + log Σ exp(x - m) with m the row max.
+    - Pick each row's label column with logp[np.arange(N), labels].
+followups:
+  zh:
+    - 交叉熵对 logits 的梯度是什么？为什么这么简洁？
+    - label smoothing 解决什么问题？对模型校准（calibration）有什么影响？
+    - 类别极不均衡时你会怎么改这个损失？说说 focal loss 的思路。
+    - 大模型词表有十几万，算 CE 时显存瓶颈在哪？有哪些优化（比如分块计算）？
+  en:
+    - What is the gradient of cross-entropy w.r.t. the logits, and why is it so simple?
+    - What problem does label smoothing address, and how does it affect calibration?
+    - How would you change the loss for heavily imbalanced classes? Explain focal loss.
+    - With a 150k-token vocabulary, where is the memory bottleneck in computing CE, and how do you reduce it?

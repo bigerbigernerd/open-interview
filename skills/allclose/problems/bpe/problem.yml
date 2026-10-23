@@ -1,0 +1,65 @@
+num: 22
+id: bpe
+title:
+  zh: 字节级 BPE 训练
+  en: Training a byte-level BPE tokenizer
+difficulty: hard
+track: llm
+topics: [tokenizer, bpe, strings]
+roles: [llm-algorithm]
+entry: bpe_train
+time_limit: 3
+statement:
+  zh: |
+    实现字节级 BPE 分词器的训练（和 Karpathy 的 minbpe `BasicTokenizer` 一致）：`bpe_train(text, num_merges)`，返回合并规则列表。
+
+    1. 把 `text` 按 UTF-8 编码成字节，得到初始 id 序列（0–255）。
+    2. 重复最多 `num_merges` 次（第 i 次新 token 的 id 是 `256 + i`）：
+       - 统计序列里所有**相邻对**出现的次数（重叠的也算：`a a a` 里 `(a, a)` 出现 2 次）。
+       - 选出现次数最多的对；**次数相同时，选在当前序列里最早出现的那个**。
+       - 如果最多的次数 < 2，提前停止。
+       - 从左到右扫描，把这个对的每一次（不重叠的）出现替换成新 id；记录这个对。
+    3. 返回 `[(a, b), ...]`，按合并顺序排列。
+
+    **示例**
+    ```
+    bpe_train("aaabdaaabac", 3)
+    → [(97, 97), (256, 97), (257, 98)]
+    ```
+  en: |
+    Implement byte-level BPE training, matching Karpathy's minbpe `BasicTokenizer`: `bpe_train(text, num_merges)`,
+    returning the list of merges.
+
+    1. Encode `text` as UTF-8 bytes to get the initial id sequence (0–255).
+    2. Repeat at most `num_merges` times (merge i creates id `256 + i`):
+       - Count every **adjacent pair** in the sequence (overlaps count: `a a a` contains `(a, a)` twice).
+       - Pick the most frequent pair; **on a tie, pick the one that appears earliest in the current sequence**.
+       - Stop early if the top count is < 2.
+       - Scan left to right and replace each (non-overlapping) occurrence of the pair with the new id; record the pair.
+    3. Return `[(a, b), ...]` in merge order.
+
+    **Example**
+    ```
+    bpe_train("aaabdaaabac", 3)
+    → [(97, 97), (256, 97), (257, 98)]
+    ```
+hints:
+  zh:
+    - 用普通 dict 计数：Python 的 dict 保留插入顺序，按顺序扫描时第一次插入的就是最早出现的。`max(counts, key=counts.get)` 在平局时返回最先插入的键。
+    - "合并时用 while 循环：`if i < len(ids) - 1 and (ids[i], ids[i + 1]) == pair` 就追加新 id 并跳过两个，否则追加一个。"
+    - 中文一个字是 3 个字节，所以要用 `text.encode('utf-8')`，不能用 `ord`。
+  en:
+    - "Count with a plain dict: dicts keep insertion order, so scanning left to right inserts the earliest pair first, and `max(counts, key=counts.get)` returns the first-inserted key on ties."
+    - "Merge with a while loop: if `(ids[i], ids[i + 1]) == pair`, append the new id and skip two, else append one."
+    - A Chinese character is 3 bytes, so use `text.encode('utf-8')`, not `ord`.
+followups:
+  zh:
+    - 为什么用字节级 BPE？和字符级、词级比有什么好处？
+    - GPT-2 / GPT-4 在 BPE 之前还用正则把文本切块，为什么？
+    - 训练好之后编码（encode）一段新文本，合并的顺序有什么讲究？
+    - 词表大小怎么选？词表太大或太小分别有什么问题？中文 token 效率为什么常常偏低？
+  en:
+    - Why byte-level BPE, and what does it gain over character- or word-level vocabularies?
+    - GPT-2 and GPT-4 split text with a regex before BPE - why?
+    - When encoding new text with trained merges, why does the merge order matter?
+    - How do you choose the vocabulary size, and why are Chinese texts often tokenized inefficiently?

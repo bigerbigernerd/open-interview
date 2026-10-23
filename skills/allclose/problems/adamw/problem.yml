@@ -1,0 +1,61 @@
+num: 11
+id: adamw
+title:
+  zh: AdamW 的一步更新
+  en: One AdamW step
+difficulty: easy
+track: dl
+topics: [optimizer, adam, weight-decay]
+roles: [llm-algorithm, algorithm]
+entry: adamw_step
+statement:
+  zh: |
+    实现 AdamW 的一步参数更新（和 PyTorch `torch.optim.AdamW` 一致）：
+
+    `adamw_step(param, grad, m, v, t, lr=1e-3, beta1=0.9, beta2=0.999, eps=1e-8, weight_decay=0.01)`
+    返回 `(new_param, new_m, new_v)`。
+
+    ```
+    param = param · (1 - lr · weight_decay)        # 解耦的权重衰减，先做
+    m = beta1 · m + (1 - beta1) · grad
+    v = beta2 · v + (1 - beta2) · grad²
+    m̂ = m / (1 - beta1^t),   v̂ = v / (1 - beta2^t)
+    param = param - lr · m̂ / (sqrt(v̂) + eps)
+    ```
+
+    - `t` 是这一步的步数，从 1 开始。所有数组形状相同。不要原地修改输入。
+  en: |
+    Implement one AdamW parameter update, matching PyTorch's `torch.optim.AdamW`:
+
+    `adamw_step(param, grad, m, v, t, lr=1e-3, beta1=0.9, beta2=0.999, eps=1e-8, weight_decay=0.01)`
+    returns `(new_param, new_m, new_v)`.
+
+    ```
+    param = param · (1 - lr · weight_decay)        # decoupled weight decay, applied first
+    m = beta1 · m + (1 - beta1) · grad
+    v = beta2 · v + (1 - beta2) · grad²
+    m̂ = m / (1 - beta1^t),   v̂ = v / (1 - beta2^t)
+    param = param - lr · m̂ / (sqrt(v̂) + eps)
+    ```
+
+    - `t` is this step's number, starting at 1. All arrays share one shape. Don't modify the inputs in place.
+hints:
+  zh:
+    - AdamW 的权重衰减直接乘在参数上，不加进梯度里（加进梯度就是 Adam + L2）。
+    - 偏差修正用的是 `beta1 ** t`、`beta2 ** t`。
+    - eps 加在 `sqrt(v̂)` 外面。
+  en:
+    - AdamW decays the parameter directly instead of adding wd·param to the gradient (that would be Adam + L2).
+    - Bias correction uses `beta1 ** t` and `beta2 ** t`.
+    - eps is added outside `sqrt(v̂)`.
+followups:
+  zh:
+    - Adam + L2 正则和 AdamW 有什么区别？为什么大模型训练都用 AdamW？
+    - 为什么需要偏差修正？前几步不修正会怎样？
+    - Adam 的优化器状态占多少显存？训练 7B 模型时 ZeRO 怎么切分它？
+    - LayerNorm 的参数和 bias 一般要不要做 weight decay？
+  en:
+    - How do Adam + L2 and AdamW differ, and why do LLMs train with AdamW?
+    - Why is bias correction needed, and what happens in the first steps without it?
+    - How much memory do Adam's states take, and how does ZeRO shard them for a 7B model?
+    - Should LayerNorm weights and biases get weight decay?

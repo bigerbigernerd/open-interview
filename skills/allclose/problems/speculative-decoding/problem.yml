@@ -1,0 +1,55 @@
+num: 30
+id: speculative-decoding
+title:
+  zh: 投机解码的验收步骤
+  en: The verification step of speculative decoding
+difficulty: hard
+track: llm
+topics: [speculative-decoding, inference, sampling]
+roles: [llm-algorithm]
+entry: speculative_accept
+statement:
+  zh: |
+    投机解码里，小模型（draft）先连续猜 K 个 token，大模型（target）一次前向给出这 K 个位置（外加下一个位置）的分布，然后逐个验收。实现验收这一步：
+
+    `speculative_accept(draft_tokens, draft_probs, target_probs, u)`，返回 `(accepted, next_probs)`。
+
+    - `draft_tokens`：`(K,)`，draft 猜的 token；`draft_probs`：`(K, V)`，第 i 个 token 是从 `q_i = draft_probs[i]` 采样的。
+    - `target_probs`：`(K+1, V)`，target 在每个位置的分布 `p_i`，最后一行 `p_K` 是全部接受后下一个位置的分布。
+    - `u`：`(K,)`，[0, 1) 上的均匀随机数，第 i 个用于第 i 次验收。
+    - 从 i = 0 开始：设 `x = draft_tokens[i]`，若 `u[i] < min(1, p_i[x] / q_i[x])` 则接受 x 并继续；否则**拒绝并停止**，返回已接受的 token 和残差分布 `normalize(max(0, p_i - q_i))`。
+    - 如果 K 个全部接受，返回全部 K 个 token 和 `p_K`。
+    - `accepted` 是 int 列表，`next_probs` 是 `(V,)` 的概率（调用方会从里面再采样一个 token）。
+  en: |
+    In speculative decoding a small draft model guesses K tokens in a row, the large target model scores all K
+    positions (plus the next one) in a single forward pass, and the guesses are verified one by one. Implement
+    the verification:
+
+    `speculative_accept(draft_tokens, draft_probs, target_probs, u)`, returning `(accepted, next_probs)`.
+
+    - `draft_tokens`: `(K,)`, the draft's tokens; `draft_probs`: `(K, V)`, token i was sampled from `q_i = draft_probs[i]`.
+    - `target_probs`: `(K+1, V)`, the target's distribution `p_i` at each position; the last row `p_K` is the distribution after all K are accepted.
+    - `u`: `(K,)` uniform numbers in [0, 1); `u[i]` decides the i-th check.
+    - Starting at i = 0, with `x = draft_tokens[i]`: if `u[i] < min(1, p_i[x] / q_i[x])`, accept x and continue;
+      otherwise **reject and stop**, returning the tokens accepted so far and the residual distribution
+      `normalize(max(0, p_i - q_i))`.
+    - If all K are accepted, return all K tokens and `p_K`.
+    - `accepted` is a list of ints; `next_probs` is a `(V,)` probability vector (the caller samples one more token from it).
+hints:
+  zh:
+    - 拒绝时的残差分布要先 `np.maximum(p - q, 0)` 再除以它的和。
+    - 全部接受时用的是最后一行 `target_probs[K]`，不是 `target_probs[K-1]`。
+  en:
+    - On rejection, clip with `np.maximum(p - q, 0)` before dividing by the sum.
+    - When everything is accepted, use the last row `target_probs[K]`, not `target_probs[K-1]`.
+followups:
+  zh:
+    - 为什么这样验收之后，输出分布和直接用大模型采样完全一样？简单证明一下。
+    - 期望每轮能接受多少个 token？和 draft 与 target 的什么性质有关？K 怎么选？
+    - 贪心解码（temperature = 0）时验收规则变成什么？
+    - Medusa、EAGLE 这类方法和用独立 draft 模型的投机解码有什么区别？
+  en:
+    - Why is the output distribution exactly the target model's after this verification? Sketch the proof.
+    - How many tokens are accepted per round in expectation, what does it depend on, and how do you pick K?
+    - What does the rule become for greedy decoding (temperature 0)?
+    - How do Medusa and EAGLE differ from speculative decoding with a separate draft model?

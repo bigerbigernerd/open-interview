@@ -1,0 +1,46 @@
+num: 16
+id: conv2d
+title:
+  zh: 二维卷积前向（stride + padding）
+  en: 2-D convolution forward with stride and padding
+difficulty: medium
+track: dl
+topics: [convolution, im2col, vectorization]
+roles: [algorithm]
+entry: conv2d
+time_limit: 2
+statement:
+  zh: |
+    实现和 PyTorch `F.conv2d` 一样的二维卷积：`conv2d(x, w, b=None, stride=1, padding=0)`。
+
+    - `x`：`(N, C, H, W)`；`w`：`(F, C, KH, KW)`；`b`：`(F,)` 或 `None`。
+    - 做的是**互相关**（不翻转卷积核），四周各补 `padding` 圈 0，步长 `stride`（高和宽相同）。
+    - 输出 `(N, F, H_out, W_out)`，`H_out = (H + 2·padding - KH) // stride + 1`，W 同理。
+    - 有一个 `(4, 8, 32, 32)` 输入、16 个 3×3 卷积核的用例，限时 2 秒，七重 Python 循环会超时，试试 im2col 或者 `np.einsum`。
+  en: |
+    Implement 2-D convolution like PyTorch's `F.conv2d`: `conv2d(x, w, b=None, stride=1, padding=0)`.
+
+    - `x`: `(N, C, H, W)`; `w`: `(F, C, KH, KW)`; `b`: `(F,)` or `None`.
+    - It is a **cross-correlation** (the kernel is not flipped), with `padding` rings of zeros on every side and
+      the same `stride` for height and width.
+    - Output `(N, F, H_out, W_out)` with `H_out = (H + 2·padding - KH) // stride + 1`, likewise for W.
+    - One case has a `(4, 8, 32, 32)` input with sixteen 3×3 kernels and a 2 s limit, so seven nested Python
+      loops will time out; try im2col or `np.einsum`.
+hints:
+  zh:
+    - "`np.pad(x, ((0, 0), (0, 0), (p, p), (p, p)))` 补零。"
+    - 对卷积核的每个位置 `(i, j)` 取出输入切片 `xp[:, :, i:i + stride*H_out:stride, j:j + stride*W_out:stride]`，和 `w[:, :, i, j]` 做一次 einsum 累加，循环只有 KH×KW 次。
+  en:
+    - "Pad with `np.pad(x, ((0, 0), (0, 0), (p, p), (p, p)))`."
+    - "For each kernel offset `(i, j)`, slice `xp[:, :, i:i + stride*H_out:stride, j:j + stride*W_out:stride]` and accumulate an einsum with `w[:, :, i, j]`; that loop runs only KH×KW times."
+followups:
+  zh:
+    - im2col 的思路是什么？它用空间换了什么？
+    - 卷积层的参数量和 FLOPs 怎么算？深度可分离卷积省了多少？
+    - 感受野怎么算？空洞卷积怎么扩大感受野？
+    - 卷积和 Transformer 的 patch embedding 有什么关系？
+  en:
+    - What is the idea behind im2col, and what does it trade memory for?
+    - How do you count a conv layer's parameters and FLOPs, and how much does a depthwise-separable conv save?
+    - How do you compute the receptive field, and how do dilated convolutions enlarge it?
+    - How does a convolution relate to the patch embedding in a Vision Transformer?

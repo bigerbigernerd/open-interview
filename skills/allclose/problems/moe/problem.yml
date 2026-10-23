@@ -1,0 +1,49 @@
+num: 23
+id: moe
+title:
+  zh: MoE 路由 + 负载均衡损失
+  en: Mixture-of-experts routing with a load-balancing loss
+difficulty: hard
+track: llm
+topics: [moe, routing, load-balancing, mixtral]
+roles: [llm-algorithm]
+entry: moe_forward
+statement:
+  zh: |
+    实现一个 top-k 路由的 MoE 层：`moe_forward(x, w_router, w1, w2, top_k)`，返回 `(y, aux_loss)`。
+
+    - `x`：`(N, D)`，N 个 token；`w_router`：`(D, E)`；专家权重 `w1`：`(E, D, H)`，`w2`：`(E, H, D)`。
+    - 路由：`probs = softmax(x @ w_router)`（`(N, E)`），每个 token 选概率最大的 `top_k` 个专家。
+    - 门控权重：选中专家的概率**重新归一化**到和为 1（Mixtral 的做法）。
+    - 专家 e 的计算：`expert_e(x) = relu(x @ w1[e]) @ w2[e]`。输出 `y_n = Σ 选中的 e：gate_{n,e} · expert_e(x_n)`，形状 `(N, D)`。
+    - 负载均衡损失（Switch Transformer 形式）：`aux_loss = E · Σ_e f_e · P_e`，
+      `f_e` = 专家 e 被选中的次数 / `(N · top_k)`，`P_e` = 所有 token 上 `probs[:, e]` 的平均。返回 float。
+  en: |
+    Implement a top-k routed MoE layer: `moe_forward(x, w_router, w1, w2, top_k)`, returning `(y, aux_loss)`.
+
+    - `x`: `(N, D)`, N tokens; `w_router`: `(D, E)`; expert weights `w1`: `(E, D, H)`, `w2`: `(E, H, D)`.
+    - Routing: `probs = softmax(x @ w_router)` (`(N, E)`); each token picks the `top_k` most probable experts.
+    - Gates: the selected experts' probabilities **renormalized** to sum to 1 (as in Mixtral).
+    - Expert e computes `expert_e(x) = relu(x @ w1[e]) @ w2[e]`. Output `y_n = Σ over selected e of gate_{n,e} · expert_e(x_n)`, shape `(N, D)`.
+    - Load-balancing loss in the Switch Transformer form: `aux_loss = E · Σ_e f_e · P_e`, where `f_e` = times
+      expert e was selected / `(N · top_k)` and `P_e` = mean of `probs[:, e]` over tokens. Return a float.
+hints:
+  zh:
+    - "`np.argsort(-probs, axis=1)[:, :top_k]` 拿到每个 token 选中的专家。"
+    - 按专家循环：找出选中这个专家的 token，一次性算这些 token 的专家输出，再乘上各自的门控权重累加回去。
+    - "`f` 可以用 `np.bincount(idx.ravel(), minlength=E) / (N * top_k)`。"
+  en:
+    - "`np.argsort(-probs, axis=1)[:, :top_k]` gives each token's experts."
+    - Loop over experts - gather the tokens routed to it, run them through the expert at once, and add back weighted by their gates.
+    - "`f` is `np.bincount(idx.ravel(), minlength=E) / (N * top_k)`."
+followups:
+  zh:
+    - 为什么需要负载均衡损失？不加会出现什么现象？
+    - 专家容量（capacity factor）和 token dropping 是怎么回事？
+    - DeepSeek-MoE 的共享专家和细粒度专家解决了什么问题？无辅助损失的负载均衡又是怎么做的？
+    - MoE 的总参数和激活参数怎么算？推理时显存和通信的瓶颈在哪（专家并行）？
+  en:
+    - Why is a load-balancing loss needed, and what happens without it?
+    - What are expert capacity (capacity factor) and token dropping?
+    - What do DeepSeek-MoE's shared and fine-grained experts fix, and how does its auxiliary-loss-free balancing work?
+    - How do total and active parameters differ, and where are the memory and communication bottlenecks in serving (expert parallelism)?

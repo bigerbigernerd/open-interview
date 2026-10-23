@@ -1,0 +1,56 @@
+num: 3
+id: layer-norm
+title:
+  zh: LayerNorm 前向
+  en: LayerNorm forward
+difficulty: easy
+track: dl
+topics: [normalization, layernorm, numerical-stability]
+roles: [llm-algorithm, algorithm]
+entry: layer_norm
+statement:
+  zh: |
+    实现 LayerNorm 的前向 `layer_norm(x, gamma, beta, eps=1e-5)`：对最后一维做归一化。
+
+    ```
+    μ  = mean(x, 最后一维)
+    σ² = mean((x - μ)², 最后一维)        # 有偏方差，除以 D
+    y  = (x - μ) / sqrt(σ² + eps) * gamma + beta
+    ```
+
+    - `x`：形状 `(..., D)`；`gamma`、`beta`：形状 `(D,)`。
+    - 返回和 `x` 同形状的数组。
+    - 测试里有均值很大（比如 1e7）但方差很小的数据，用 `E[x²] - E[x]²` 算方差会被精度坑。
+  en: |
+    Implement the LayerNorm forward pass `layer_norm(x, gamma, beta, eps=1e-5)`, normalizing over the last
+    dimension.
+
+    ```
+    μ  = mean(x, last dim)
+    σ² = mean((x - μ)², last dim)        # biased variance, divide by D
+    y  = (x - μ) / sqrt(σ² + eps) * gamma + beta
+    ```
+
+    - `x`: shape `(..., D)`; `gamma`, `beta`: shape `(D,)`.
+    - Return an array shaped like `x`.
+    - Some tests have a huge mean (around 1e7) with a small variance, where `E[x²] - E[x]²` loses all precision.
+hints:
+  zh:
+    - 用 keepdims=True 在最后一维求均值和方差。
+    - 先减均值再平方求平均，别用 E[x²] - E[x]²。
+    - eps 要加在 sqrt 里面。
+  en:
+    - Take the mean and variance over the last axis with keepdims=True.
+    - Subtract the mean first, then average the squares; avoid E[x²] - E[x]².
+    - eps goes inside the square root.
+followups:
+  zh:
+    - LayerNorm 和 BatchNorm 归一化的维度有什么不同？为什么 Transformer 用 LayerNorm？
+    - Pre-LN 和 Post-LN 有什么区别？为什么现在的大模型多用 Pre-LN？
+    - RMSNorm 去掉了什么？为什么效果差不多还更快？
+    - 推理时 LayerNorm 的开销在哪里？能和前后的算子融合吗？
+  en:
+    - Which dimensions do LayerNorm and BatchNorm normalize over, and why do Transformers use LayerNorm?
+    - What is the difference between Pre-LN and Post-LN, and why do modern LLMs mostly use Pre-LN?
+    - What does RMSNorm drop, and why does it work about as well while being faster?
+    - Where is the cost of LayerNorm at inference time, and can it be fused with neighboring ops?

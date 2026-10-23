@@ -1,0 +1,57 @@
+num: 12
+id: mlp-backward
+title:
+  zh: 手推两层 MLP 的反向传播
+  en: Backprop through a two-layer MLP by hand
+difficulty: hard
+track: dl
+topics: [backprop, gradients, relu, cross-entropy]
+roles: [algorithm, llm-algorithm]
+entry: mlp_backward
+statement:
+  zh: |
+    不用自动求导，手写一个两层 MLP 的前向和反向：`mlp_backward(x, y, w1, b1, w2, b2)`。
+
+    ```
+    h      = relu(x @ w1 + b1)          # x: (N, D), w1: (D, H), b1: (H,)
+    logits = h @ w2 + b2                # w2: (H, C), b2: (C,)
+    loss   = mean_i CE(logits_i, y_i)   # y: (N,) 整数标签，对 batch 取平均
+    ```
+
+    返回一个 dict：`{"loss": float, "w1": dW1, "b1": db1, "w2": dW2, "b2": db2}`，每个梯度和对应参数同形状。
+
+    - ReLU 在 0 处的导数取 0。
+    - logits 可能比较大，算 loss 时注意数值稳定。
+  en: |
+    Without autograd, write the forward and backward pass of a two-layer MLP: `mlp_backward(x, y, w1, b1, w2, b2)`.
+
+    ```
+    h      = relu(x @ w1 + b1)          # x: (N, D), w1: (D, H), b1: (H,)
+    logits = h @ w2 + b2                # w2: (H, C), b2: (C,)
+    loss   = mean_i CE(logits_i, y_i)   # y: (N,) integer labels, averaged over the batch
+    ```
+
+    Return a dict `{"loss": float, "w1": dW1, "b1": db1, "w2": dW2, "b2": db2}`, each gradient shaped like its parameter.
+
+    - Take the ReLU derivative at 0 to be 0.
+    - Logits can be large; keep the loss numerically stable.
+hints:
+  zh:
+    - softmax + 交叉熵对 logits 的梯度是 `(softmax(logits) - onehot(y)) / N`。
+    - "`dW2 = h.T @ dlogits`，`db2 = dlogits.sum(0)`，`dh = dlogits @ w2.T`。"
+    - ReLU 反向：`dz1 = dh * (z1 > 0)`，然后同样的方式算 dW1、db1。
+  en:
+    - The gradient of softmax + cross-entropy w.r.t. the logits is `(softmax(logits) - onehot(y)) / N`.
+    - "`dW2 = h.T @ dlogits`, `db2 = dlogits.sum(0)`, `dh = dlogits @ w2.T`."
+    - "Through the ReLU: `dz1 = dh * (z1 > 0)`, then dW1 and db1 the same way."
+followups:
+  zh:
+    - 你怎么验证自己写的梯度是对的？数值梯度检查要注意什么？
+    - 为什么交叉熵的梯度这么简洁？如果把 softmax 和 CE 分开求导会有什么数值问题？
+    - ReLU 有什么问题（dead ReLU）？GELU、SiLU 为什么更常用在 Transformer 里？
+    - 这个网络的激活值显存怎么算？activation checkpointing 是怎么省显存的？
+  en:
+    - How do you check that your gradients are right, and what are the pitfalls of numerical gradient checking?
+    - Why is the cross-entropy gradient so simple, and what numerical issues appear if softmax and CE are differentiated separately?
+    - What is the dead-ReLU problem, and why are GELU and SiLU more common in Transformers?
+    - How much activation memory does this network keep, and how does activation checkpointing save it?

@@ -1,0 +1,49 @@
+num: 18
+id: kv-cache
+title:
+  zh: 带 KV Cache 的单步解码
+  en: One decoding step with a KV cache
+difficulty: medium
+track: llm
+topics: [kv-cache, inference, attention, decoding]
+roles: [llm-algorithm]
+entry: decode_step
+statement:
+  zh: |
+    推理时每生成一个 token 只算这一个位置，前面的 k、v 从缓存里取。实现 `decode_step(x, w_q, w_k, w_v, w_o, num_heads, k_cache, v_cache)`，返回 `(y, new_k_cache, new_v_cache)`。
+
+    - `x`：`(B, 1, D)`，新 token 的隐状态；`w_q, w_k, w_v, w_o`：`(D, D)`，按 `x @ w` 相乘。
+    - `k_cache`、`v_cache`：`(B, H, T, Dh)`，前面 T 个位置的 k、v（T 可以是 0，`Dh = D / H`）。
+    - 步骤：算出新 token 的 q、k、v 并拆成 H 个头 → 把新的 k、v **拼到缓存末尾**得到 `(B, H, T+1, Dh)` → 新 token 的 query 对这 T+1 个位置做注意力（除以 `sqrt(Dh)`）→ 合并各头、乘 `w_o`。
+    - `y`：`(B, 1, D)`；返回的新缓存是 `(B, H, T+1, Dh)`。
+  en: |
+    At inference time each new token computes only its own position and reads earlier keys and values from a
+    cache. Implement `decode_step(x, w_q, w_k, w_v, w_o, num_heads, k_cache, v_cache)` returning
+    `(y, new_k_cache, new_v_cache)`.
+
+    - `x`: `(B, 1, D)`, the new token's hidden state; `w_q, w_k, w_v, w_o`: `(D, D)`, applied as `x @ w`.
+    - `k_cache`, `v_cache`: `(B, H, T, Dh)`, keys and values of the previous T positions (T may be 0, `Dh = D / H`).
+    - Compute the new token's q, k, v and split them into H heads → **append** the new k, v to the end of the
+      caches to get `(B, H, T+1, Dh)` → attend from the new query to all T+1 positions (divide by `sqrt(Dh)`) →
+      merge the heads and multiply by `w_o`.
+    - `y` is `(B, 1, D)`; the returned caches are `(B, H, T+1, Dh)`.
+hints:
+  zh:
+    - 拆头：`(B, 1, D)` → `reshape(B, 1, H, Dh)` → `transpose(0, 2, 1, 3)` 得到 `(B, H, 1, Dh)`。
+    - "`np.concatenate([k_cache, k_new], axis=2)` 追加到时间维。"
+    - 单步解码不需要 causal mask：缓存里本来就只有过去的位置。
+  en:
+    - "Split heads: `(B, 1, D)` → `reshape(B, 1, H, Dh)` → `transpose(0, 2, 1, 3)` gives `(B, H, 1, Dh)`."
+    - "`np.concatenate([k_cache, k_new], axis=2)` appends along the time axis."
+    - A single decoding step needs no causal mask; the cache only holds past positions.
+followups:
+  zh:
+    - KV cache 的显存怎么算？一个 7B 模型、4k 上下文、batch 32 大概要多少？
+    - 为什么只缓存 k、v，不缓存 q？
+    - PagedAttention（vLLM）解决了 KV cache 的什么问题？
+    - prefill 和 decode 两个阶段的瓶颈分别是什么（算力还是带宽）？
+  en:
+    - How do you size the KV cache? Roughly how much for a 7B model, 4k context, batch 32?
+    - Why cache k and v but not q?
+    - What KV-cache problem does PagedAttention (vLLM) solve?
+    - What bounds the prefill and decode phases respectively, compute or memory bandwidth?

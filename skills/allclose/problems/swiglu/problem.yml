@@ -1,0 +1,49 @@
+num: 19
+id: swiglu
+title:
+  zh: SwiGLU 前馈层
+  en: SwiGLU feed-forward layer
+difficulty: easy
+track: llm
+topics: [ffn, swiglu, activation, llama]
+roles: [llm-algorithm]
+entry: swiglu_ffn
+statement:
+  zh: |
+    实现 LLaMA 的前馈层：`swiglu_ffn(x, w_gate, w_up, w_down)`。
+
+    ```
+    silu(z) = z · sigmoid(z)
+    y = (silu(x @ w_gate) ⊙ (x @ w_up)) @ w_down
+    ```
+
+    - `x`：`(..., D)`；`w_gate`、`w_up`：`(D, H)`；`w_down`：`(H, D)`。返回 `(..., D)`。
+    - silu 只作用在 gate 分支上，up 分支是线性的。
+  en: |
+    Implement LLaMA's feed-forward layer: `swiglu_ffn(x, w_gate, w_up, w_down)`.
+
+    ```
+    silu(z) = z · sigmoid(z)
+    y = (silu(x @ w_gate) ⊙ (x @ w_up)) @ w_down
+    ```
+
+    - `x`: `(..., D)`; `w_gate`, `w_up`: `(D, H)`; `w_down`: `(H, D)`. Return `(..., D)`.
+    - silu applies to the gate branch only; the up branch stays linear.
+hints:
+  zh:
+    - "`sigmoid(z) = 1 / (1 + np.exp(-z))`，SiLU 也叫 Swish。"
+    - ⊙ 是逐元素相乘。
+  en:
+    - "`sigmoid(z) = 1 / (1 + np.exp(-z))`; SiLU is also called Swish."
+    - ⊙ is an element-wise product.
+followups:
+  zh:
+    - 为什么 SwiGLU 的隐层维度常取 8/3·D 而不是 4·D？
+    - 门控（GLU）结构为什么比普通 ReLU/GELU FFN 效果好？
+    - FFN 在一个 Transformer 层里占多少参数和计算量？
+    - 推理时 gate 和 up 两个矩阵乘可以怎么合并？
+  en:
+    - Why is SwiGLU's hidden size usually 8/3·D instead of 4·D?
+    - Why do gated (GLU) FFNs beat plain ReLU/GELU FFNs?
+    - What share of a Transformer layer's parameters and FLOPs does the FFN take?
+    - How can the gate and up matmuls be fused at inference time?

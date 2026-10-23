@@ -1,0 +1,49 @@
+num: 27
+id: merge-attention-states
+title:
+  zh: 合并分块注意力结果（FlashAttention 的核心）
+  en: Merging partial attention results (the core of FlashAttention)
+difficulty: hard
+track: llm
+topics: [attention, flash-attention, online-softmax, log-sum-exp]
+roles: [llm-algorithm]
+entry: merge_attention_states
+statement:
+  zh: |
+    FlashAttention、Flash-Decoding、Ring Attention 都把 key 分成几块，每块单独算注意力，最后再合并。合并只需要每块的输出和 logsumexp。实现 `merge_attention_states(o1, lse1, o2, lse2)`，返回 `(o, lse)`。
+
+    - 同一批 query 对两组**不相交**的 key 分别做了注意力：
+      - `o1`、`o2`：`(..., T, D)`，各自在自己那组 key 上的注意力输出（各自 softmax 归一化过）。
+      - `lse1`、`lse2`：`(..., T)`，各自那组缩放后分数的 logsumexp：`lse = log Σ_j exp(s_j)`。
+    - 返回在**全部 key** 上做注意力的结果：输出 `o`（`(..., T, D)`）和整体的 `lse`（`(..., T)`）。
+    - 某一组对某个 query 可能完全不可见（比如 causal mask），这时它的 `lse` 是 `-inf`、`o` 是 0；保证两组不会同时为 `-inf`。
+    - 测试里分数上千，`exp(lse)` 会溢出。
+  en: |
+    FlashAttention, Flash-Decoding and Ring Attention split the keys into blocks, run attention on each block,
+    and merge the results; the merge only needs each block's output and logsumexp. Implement
+    `merge_attention_states(o1, lse1, o2, lse2)`, returning `(o, lse)`.
+
+    - The same queries attended to two **disjoint** sets of keys:
+      - `o1`, `o2`: `(..., T, D)`, the attention outputs over each set (each softmax-normalized on its own).
+      - `lse1`, `lse2`: `(..., T)`, the logsumexp of each set's scaled scores, `lse = log Σ_j exp(s_j)`.
+    - Return the result of attending to **all** keys: output `o` (`(..., T, D)`) and the overall `lse` (`(..., T)`).
+    - A set may be fully invisible to a query (for example under a causal mask): its `lse` is `-inf` and its `o` is 0. Both are never `-inf` together.
+    - Scores in the tests reach the thousands, where `exp(lse)` overflows.
+hints:
+  zh:
+    - 全部 key 上的 softmax 分母 = exp(lse1) + exp(lse2)，所以 `lse = np.logaddexp(lse1, lse2)`。
+    - 第一组在整体里的权重是 `exp(lse1 - lse)`，第二组同理；别忘了在最后一维上广播（`[..., None]`）。
+  en:
+    - The softmax denominator over all keys is exp(lse1) + exp(lse2), so `lse = np.logaddexp(lse1, lse2)`.
+    - The first set's weight in the whole is `exp(lse1 - lse)`, likewise for the second; broadcast with `[..., None]`.
+followups:
+  zh:
+    - 用这个合并操作，怎么写出不存 T×T 分数矩阵的分块注意力（online softmax）？
+    - FlashAttention 快在哪？减少的是 FLOPs 还是 HBM 读写？
+    - Flash-Decoding 为什么要在 key 维度上切分？解码时的瓶颈是什么？
+    - 反向传播时 FlashAttention 为什么要保存 lse，而不保存注意力矩阵？
+  en:
+    - Using this merge, how do you write block-wise attention that never stores the T×T score matrix (online softmax)?
+    - Where does FlashAttention's speed come from - fewer FLOPs or less HBM traffic?
+    - Why does Flash-Decoding split along the key dimension, and what limits decoding?
+    - Why does FlashAttention's backward pass keep lse instead of the attention matrix?

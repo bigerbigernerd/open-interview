@@ -1,4 +1,4 @@
-# On every push to main: rebuild the index from bank/ (committing it if it changed),
+# On every push to main: rebuild the indexes from bank/ and skills/allclose/problems/ (committing them if they changed),
 # then deploy the practice UI to GitHub Pages (Settings → Pages → Source: GitHub Actions).
 name: publish
 
@@ -28,7 +28,7 @@ jobs:
       - run: python tools/build.py
       - name: Commit the rebuilt index if bank/ changed it
         run: |
-          git add skills/mock-interviewer/data
+          git add skills/mock-interviewer/data skills/allclose/data
           if git diff --cached --quiet; then echo "index unchanged"; exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -39,6 +39,7 @@ jobs:
           mkdir -p _site/data
           cp -r skills/mock-interviewer/ui/. _site/
           cp skills/mock-interviewer/data/index.json skills/mock-interviewer/data/THIRD_PARTY_LICENSES.md _site/data/
+          cp skills/allclose/data/problems.json _site/data/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

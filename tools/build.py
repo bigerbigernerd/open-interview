@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Validate bank/ and build skills/mock-interviewer/data/index.json.
+"""Validate bank/ and build skills/mock-interviewer/data/index.json; validate the allclose problems
+in skills/allclose/problems/ and build skills/allclose/data/problems.json.
 
     python3 tools/build.py           # validate + write the index
     python3 tools/build.py --check   # validate only (CI); exit 1 on errors
@@ -19,6 +20,8 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 BANK = ROOT / "bank"
 OUT = ROOT / "skills" / "mock-interviewer" / "data" / "index.json"
+PROBLEMS = ROOT / "skills" / "allclose" / "problems"
+PROBLEMS_OUT = ROOT / "skills" / "allclose" / "data" / "problems.json"
 
 LANGS = {"zh", "en"}
 ITEM_KEYS = {"id", "q", "lang", "type", "roles", "topics", "companies", "levels", "difficulty", "weight",
@@ -304,8 +307,14 @@ def build(check_only=False):
             c[q[field]] = c.get(q[field], 0) + 1
         counts[field] = dict(sorted(c.items(), key=lambda kv: -kv[1]))
     print(f"ok: {counts['questions']} questions, {counts['experiences']} experiences, {len(sources)} sources")
+    problems = build_problems(tags, rep)
+    for e in rep.errors:
+        print(f"ERROR: {e}")
+    if rep.errors:
+        return 1
     if check_only:
         return 0
+    write_problems(problems)
 
     # A content digest instead of a timestamp keeps rebuilds byte-identical when bank/ did not change.
     digest = hashlib.sha1(json.dumps([questions, experiences, sources], ensure_ascii=False,
@@ -328,6 +337,94 @@ def build(check_only=False):
     (OUT.parent / "THIRD_PARTY_LICENSES.md").write_text("".join(notices), encoding="utf-8")
     print(f"wrote {OUT.relative_to(ROOT)} ({OUT.stat().st_size // 1024} KB)")
     return 0
+
+
+# ---------------- allclose problems ----------------
+
+PROBLEM_KEYS = {"num", "id", "title", "difficulty", "track", "topics", "entry", "roles", "companies", "banned",
+                "time_limit", "statement", "hints", "followups", "source"}
+PROBLEM_FILES = ("problem.yml", "starter.py", "solution.py", "tests.py", "wrong.py")
+
+
+def functions(path):
+    import ast
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    return {n.name for n in tree.body if isinstance(n, ast.FunctionDef)}
+
+
+def build_problems(tags, rep):
+    """Validate every skills/allclose/problems/<id>/ folder; return the problems sorted by number."""
+    problems, nos = [], {}
+    for d in sorted(x for x in PROBLEMS.iterdir() if x.is_dir() and not x.name.startswith(("_", "."))):
+        where = f"skills/allclose/problems/{d.name}"
+        missing = [f for f in PROBLEM_FILES if not (d / f).is_file()]
+        if missing:
+            rep.err(where, f"missing {', '.join(missing)}")
+            continue
+        p = load_yaml(d / "problem.yml", rep)
+        if not isinstance(p, dict):
+            continue
+        for k in sorted(set(p) - PROBLEM_KEYS):
+            rep.err(where, f"unknown field '{k}'{suggest(k, PROBLEM_KEYS)}")
+        if p.get("id") != d.name:
+            rep.err(where, f"id must equal the folder name ({d.name})")
+        if not isinstance(p.get("num"), int) or p["num"] in nos:  # `num`, not `no`: YAML reads `no:` as False
+            rep.err(where, f"num must be a unique integer (taken by {nos.get(p.get('num'))})")
+        nos[p.get("num")] = d.name
+        p["no"] = p.pop("num", None)
+        if p.get("difficulty") not in ("easy", "medium", "hard"):
+            rep.err(where, "difficulty must be easy | medium | hard")
+        if p.get("track") not in ("ml", "dl", "llm"):
+            rep.err(where, "track must be ml | dl | llm")
+        for r in as_list(p.get("roles")):
+            if r not in tags["roles"]:
+                rep.err(where, f"unknown role '{r}'{suggest(r, tags['roles'])}")
+        for c in as_list(p.get("companies")):
+            if not isinstance(c, dict) or c.get("company") not in tags["companies"] or not c.get("source"):
+                rep.err(where, "companies entries need {company: <tags.yml slug>, source: <面经 url>}")
+        for field in ("title", "statement"):
+            if not isinstance(p.get(field), dict) or not all(p[field].get(l) for l in LANGS):
+                rep.err(where, f"{field} needs both zh and en")
+        for field in ("hints", "followups"):
+            v = p.get(field) or {}
+            if not all(isinstance(v.get(l), list) and v[l] for l in LANGS):
+                rep.err(where, f"{field} needs non-empty zh and en lists")
+        entry = p.get("entry")
+        for f in ("starter.py", "solution.py"):
+            try:
+                if entry not in functions(d / f):
+                    rep.err(where, f"{f} does not define {entry}()")
+            except SyntaxError as e:
+                rep.err(where, f"{f}: {e}")
+        try:
+            if not functions(d / "wrong.py"):
+                rep.err(where, "wrong.py needs at least one buggy variant")
+            if "cases" not in functions(d / "tests.py"):
+                rep.err(where, "tests.py must define cases()")
+        except SyntaxError as e:
+            rep.err(where, str(e))
+        p["topics"] = as_list(p.get("topics"))
+        p["roles"] = as_list(p.get("roles"))
+        p["starter"] = (d / "starter.py").read_text(encoding="utf-8")
+        p["solution"] = (d / "solution.py").read_text(encoding="utf-8")
+        problems.append(p)
+    problems.sort(key=lambda x: x.get("no") or 0)
+    print(f"ok: {len(problems)} allclose problems")
+    return problems
+
+
+def write_problems(problems):
+    digest = hashlib.sha1(json.dumps(problems, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:12]
+    counts = {"problems": len(problems)}
+    for field in ("track", "difficulty"):
+        c = {}
+        for p in problems:
+            c[p[field]] = c.get(p[field], 0) + 1
+        counts[field] = c
+    PROBLEMS_OUT.parent.mkdir(parents=True, exist_ok=True)
+    PROBLEMS_OUT.write_text(json.dumps({"schema": 1, "digest": digest, "counts": counts, "problems": problems},
+                                       ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    print(f"wrote {PROBLEMS_OUT.relative_to(ROOT)} ({PROBLEMS_OUT.stat().st_size // 1024} KB)")
 
 
 if __name__ == "__main__":

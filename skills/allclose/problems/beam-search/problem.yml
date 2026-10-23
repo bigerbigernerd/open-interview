@@ -1,0 +1,51 @@
+num: 21
+id: beam-search
+title:
+  zh: Beam Search 解码
+  en: Beam search decoding
+difficulty: hard
+track: llm
+topics: [decoding, beam-search, search]
+roles: [llm-algorithm]
+entry: beam_search
+statement:
+  zh: |
+    在一个玩具“语言模型”上实现 beam search：`beam_search(log_probs, start, eos, beam_size, max_len)`，返回 `(tokens, score)`。
+
+    - `log_probs`：`(V, V)`，`log_probs[a, b]` 是上一个 token 为 `a` 时下一个 token 为 `b` 的对数概率（一个二元语法模型）。
+    - 序列从 `start` 出发（`start` 不算进输出），分数是生成的每个 token 对数概率之和，不做长度归一化。
+    - 每一步：把每条未结束的 beam 用全部 V 个 token 扩展，所有候选按分数从高到低排序，**取前 `beam_size` 个**；其中以 `eos` 结尾的移入“已完成”列表（它们也占名额），其余成为下一步的 beam。没有未结束的 beam 时提前停止。
+    - 最多走 `max_len` 步；结束后剩下的 beam 也算作完成。返回所有完成序列中分数最高的那条：`tokens` 是 int 列表（包含结尾的 eos，如果有），`score` 是 float。
+    - 测试数据里不会出现分数相同的候选。
+  en: |
+    Implement beam search over a toy "language model": `beam_search(log_probs, start, eos, beam_size, max_len)`,
+    returning `(tokens, score)`.
+
+    - `log_probs`: `(V, V)`, where `log_probs[a, b]` is the log-probability of next token `b` after token `a` (a bigram model).
+    - Sequences start from `start` (not part of the output); a score is the sum of the generated tokens' log-probabilities, without length normalization.
+    - Each step, extend every unfinished beam by all V tokens, sort all candidates by score (highest first) and
+      **keep the top `beam_size`**. Those ending in `eos` move to the finished list (they still use up slots); the
+      rest become the next beams. Stop early when no unfinished beam is left.
+    - Run at most `max_len` steps; afterwards the remaining beams count as finished too. Return the
+      highest-scoring finished sequence: `tokens` is a list of ints (including the final eos, if any) and `score` a float.
+    - The tests never produce tied candidates.
+hints:
+  zh:
+    - 每条 beam 存成 `(tokens 元组, 分数)`；扩展时最后一个 token 是 `seq[-1] if seq else start`。
+    - 先收集所有候选再统一排序取前 beam_size，不要每条 beam 各取各的然后拼接。
+    - 结束时别忘了把还没遇到 eos 的 beam 也加进候选。
+  en:
+    - Store each beam as `(tokens tuple, score)`; the last token is `seq[-1] if seq else start`.
+    - Collect every candidate, then sort once and keep beam_size of them.
+    - At the end, include the beams that never hit eos as well.
+followups:
+  zh:
+    - beam search 为什么偏好短句子？长度惩罚（length penalty）怎么加？
+    - 为什么开放式对话生成很少用 beam search，而机器翻译常用？
+    - beam size 越大效果一定越好吗？“beam search curse” 是什么？
+    - 真实模型里 beam search 的 KV cache 怎么管理（beam 重排时）？
+  en:
+    - Why does beam search favor short outputs, and how do you add a length penalty?
+    - Why is beam search rare for open-ended chat but common in machine translation?
+    - Is a bigger beam always better? What is the "beam search curse"?
+    - How is the KV cache managed in a real model when beams get reordered?

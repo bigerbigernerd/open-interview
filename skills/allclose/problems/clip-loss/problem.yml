@@ -1,0 +1,49 @@
+num: 28
+id: clip-loss
+title:
+  zh: CLIP 对比损失（InfoNCE）
+  en: CLIP contrastive loss (InfoNCE)
+difficulty: medium
+track: llm
+topics: [contrastive-learning, clip, infonce, multimodal]
+roles: [llm-algorithm, algorithm]
+entry: clip_loss
+statement:
+  zh: |
+    实现 CLIP 的对称对比损失：`clip_loss(image_emb, text_emb, temperature=0.07)`，返回 float。
+
+    - `image_emb`、`text_emb`：`(N, D)`，第 i 张图和第 i 段文字是一对，其余都是负样本。
+    - 先把每一行 **L2 归一化**成单位向量。
+    - `logits = image @ textᵀ / temperature`，形状 `(N, N)`。
+    - 图→文：每一行是一个 N 分类，正确类别是 i；文→图：每一列同理（即 `logitsᵀ` 的每一行）。
+    - `loss = (CE_图→文 + CE_文→图) / 2`，两个交叉熵都对 N 求平均。
+    - 测试里有 temperature = 0.001 的用例，logits 上千，注意数值稳定。
+  en: |
+    Implement CLIP's symmetric contrastive loss: `clip_loss(image_emb, text_emb, temperature=0.07)`, returning a float.
+
+    - `image_emb`, `text_emb`: `(N, D)`; image i and text i form a pair, everything else is a negative.
+    - First **L2-normalize** every row to a unit vector.
+    - `logits = image @ textᵀ / temperature`, shape `(N, N)`.
+    - Image→text: each row is an N-way classification whose answer is i; text→image: the same per column (each row of `logitsᵀ`).
+    - `loss = (CE_image→text + CE_text→image) / 2`, each cross-entropy averaged over N.
+    - One case has temperature = 0.001, with logits in the thousands, so keep it stable.
+hints:
+  zh:
+    - "`x / np.linalg.norm(x, axis=1, keepdims=True)` 做 L2 归一化。"
+    - 正确类别在对角线上，用 log_softmax 之后取 `np.diag`。
+    - log_softmax 先减每行最大值。
+  en:
+    - "L2-normalize with `x / np.linalg.norm(x, axis=1, keepdims=True)`."
+    - The targets are on the diagonal; take `np.diag` of the log-softmax.
+    - Subtract each row's max inside log_softmax.
+followups:
+  zh:
+    - 温度系数起什么作用？CLIP 为什么把它做成可学习的参数，还要限制上限？
+    - 为什么 batch size 对对比学习这么重要？显存不够时怎么扩大有效负样本数？
+    - 多卡训练时负样本怎么在卡之间共享（all-gather）？梯度怎么处理？
+    - SigLIP 把 softmax 换成 sigmoid 有什么好处？
+  en:
+    - What does the temperature do, and why does CLIP learn it while capping it?
+    - Why does batch size matter so much in contrastive learning, and how do you get more negatives with limited memory?
+    - How are negatives shared across GPUs (all-gather), and what happens to the gradients?
+    - What does SigLIP gain by replacing the softmax with a sigmoid?

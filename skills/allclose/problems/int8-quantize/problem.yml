@@ -1,0 +1,45 @@
+num: 29
+id: int8-quantize
+title:
+  zh: 按通道对称 int8 量化
+  en: Per-channel symmetric int8 quantization
+difficulty: easy
+track: llm
+topics: [quantization, int8, inference]
+roles: [llm-algorithm]
+entry: quantize_int8
+statement:
+  zh: |
+    实现权重的按输出通道（按行）对称 int8 量化：`quantize_int8(w)`，返回 `(q, scale)`。
+
+    - `w`：`(R, C)` 的 float 权重，每一行是一个输出通道。
+    - 每行的缩放：`scale[r] = max_c |w[r, c]| / 127`；整行都是 0 时 `scale[r] = 1.0`。
+    - `q = clip(round(w / scale[:, None]), -127, 127)`，转成 `int8`。取整用 `np.round`（四舍六入五成双，和 `torch.round` 一致）。
+    - 返回 `q`（`(R, C)`，int8）和 `scale`（`(R,)`，float）。反量化就是 `q * scale[:, None]`。
+  en: |
+    Implement per-output-channel (per-row) symmetric int8 weight quantization: `quantize_int8(w)`, returning `(q, scale)`.
+
+    - `w`: `(R, C)` float weights, one output channel per row.
+    - Per-row scale: `scale[r] = max_c |w[r, c]| / 127`; if a row is all zeros, `scale[r] = 1.0`.
+    - `q = clip(round(w / scale[:, None]), -127, 127)` as `int8`. Round with `np.round` (half to even, like `torch.round`).
+    - Return `q` (`(R, C)`, int8) and `scale` (`(R,)`, float). Dequantization is `q * scale[:, None]`.
+hints:
+  zh:
+    - "`np.abs(w).max(axis=1)` 得到每行的最大绝对值。"
+    - 先 `np.round` 再 `astype(np.int8)`；直接 `astype` 是截断，不是四舍五入。
+    - "全 0 行用 `np.where(amax > 0, amax / 127, 1.0)` 避免除以 0。"
+  en:
+    - "`np.abs(w).max(axis=1)` is each row's max magnitude."
+    - Call `np.round` before `astype(np.int8)`; a bare `astype` truncates instead of rounding.
+    - "Avoid dividing by zero for all-zero rows with `np.where(amax > 0, amax / 127, 1.0)`."
+followups:
+  zh:
+    - 按通道量化和按张量量化各有什么优缺点？为什么激活值很难按通道量化？
+    - 大模型激活里的离群值（outlier）为什么让 int8 量化变难？LLM.int8() 和 SmoothQuant 分别怎么处理？
+    - 对称量化和非对称量化（带 zero point）各适合什么场景？
+    - GPTQ、AWQ 这类 4-bit 权重量化的基本思路是什么？
+  en:
+    - What are the trade-offs between per-channel and per-tensor quantization, and why are activations hard to quantize per channel?
+    - Why do activation outliers in LLMs make int8 hard, and how do LLM.int8() and SmoothQuant deal with them?
+    - When do symmetric and asymmetric (zero-point) quantization each fit?
+    - What is the basic idea behind 4-bit weight quantization such as GPTQ and AWQ?

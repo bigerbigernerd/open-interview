@@ -1,0 +1,68 @@
+num: 5
+id: attention
+title:
+  zh: 缩放点积注意力（带 mask）
+  en: Scaled dot-product attention with masking
+difficulty: medium
+track: llm
+topics: [attention, transformer, masking, softmax]
+roles: [llm-algorithm, algorithm]
+entry: attention
+statement:
+  zh: |
+    实现 `attention(q, k, v, mask=None)`：
+
+    ```
+    Attention(Q, K, V) = softmax(Q Kᵀ / sqrt(d)) V
+    ```
+
+    - `q`：`(..., Tq, d)`，`k`：`(..., Tk, d)`，`v`：`(..., Tk, dv)`。前面的维度（batch、head）可以有任意多个。
+    - `mask`：可选的 bool 数组，能广播到 `(..., Tq, Tk)`。**True 表示可以看，False 表示屏蔽**，被屏蔽的位置注意力权重必须是 0。保证每个 query 至少能看一个位置。
+    - 返回 `(..., Tq, dv)`。
+    - 测试里有数值很大的 q、k（分数上千），注意 softmax 的数值稳定。
+
+    **示例**
+    ```
+    q = k = v = np.eye(2)
+    → [[0.6698, 0.3302],
+       [0.3302, 0.6698]]
+    ```
+  en: |
+    Implement `attention(q, k, v, mask=None)`:
+
+    ```
+    Attention(Q, K, V) = softmax(Q Kᵀ / sqrt(d)) V
+    ```
+
+    - `q`: `(..., Tq, d)`, `k`: `(..., Tk, d)`, `v`: `(..., Tk, dv)`. Any number of leading (batch, head) dims.
+    - `mask`: optional bool array broadcastable to `(..., Tq, Tk)`. **True = may attend, False = masked**; masked
+      positions must get exactly zero weight. Every query can attend to at least one position.
+    - Return `(..., Tq, dv)`.
+    - Some tests have large q and k (scores in the thousands), so keep the softmax stable.
+
+    **Example**
+    ```
+    q = k = v = np.eye(2)
+    → [[0.6698, 0.3302],
+       [0.3302, 0.6698]]
+    ```
+hints:
+  zh:
+    - Kᵀ 只转置最后两维：np.swapaxes(k, -1, -2)，或者用 q @ k.swapaxes(-1, -2)。
+    - mask 要在 softmax 之前加：把 False 的位置设成 -inf（或一个很大的负数），而不是把分数乘 0。
+    - softmax 沿最后一维（Tk）做，记得先减最大值。
+  en:
+    - Transpose only the last two axes of k - q @ k.swapaxes(-1, -2).
+    - Apply the mask before the softmax by setting masked scores to -inf (or a large negative number), not by multiplying by 0.
+    - The softmax runs over the last axis (Tk); subtract the max first.
+followups:
+  zh:
+    - 为什么要除以 sqrt(d)？不除会怎样？
+    - 时间和显存复杂度是多少？序列长度到 128k 时瓶颈在哪？
+    - mask 用 -inf 和用 -1e9 有什么区别？整行都被 mask 时会发生什么？
+    - FlashAttention 为什么快？它减少的是计算量还是显存读写？
+  en:
+    - Why divide by sqrt(d)? What happens if you don't?
+    - What are the time and memory complexities, and where is the bottleneck at 128k tokens?
+    - What is the difference between masking with -inf and with -1e9? What happens if a whole row is masked?
+    - Why is FlashAttention fast? Does it reduce FLOPs or memory traffic?

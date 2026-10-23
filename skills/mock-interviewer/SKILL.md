@@ -55,6 +55,10 @@ Follow `references/interviewer-playbook.md`. The essentials:
   grading until the end. Give a hint only when asked or after a clear stall, and note it for the report.
 - Coding: state the full problem (inputs, outputs, an example, constraints). Ask for approach and
   complexity before code; ask them to walk through an example.
+- ML / LLM 手撕 (attention, softmax, RoPE, KV cache, top-p, BPE, DPO…): if the sibling `allclose` skill is
+  installed (`../allclose/`), give one of its problems instead of a whiteboard question. The candidate
+  writes numpy code in `~/allclose/<id>.py` and you judge it locally with
+  `python3 ../allclose/scripts/allclose.py test <id> --json`; see `../allclose/SKILL.md`.
 - Respect time: if they ramble, interrupt politely and redirect, as a real interviewer would.
 
 ### Voice mode

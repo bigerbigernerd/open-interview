@@ -10,7 +10,7 @@
 
 **中文** · [English](README.en.md)
 
-[网页面试](#方式一网页面试推荐) · [在 agent 里用](#方式二在-agent-里用) · [在线刷题](https://bigerbigernerd.github.io/open-interview/) · [题库](#题库) · [贡献题目和面经](CONTRIBUTING.md)
+[网页面试](#方式一网页面试推荐) · [在 agent 里用](#方式二在-agent-里用) · [allclose · 手撕](#allclose--手撕大模型手撕题本地评测) · [在线刷题](https://bigerbigernerd.github.io/open-interview/) · [题库](#题库) · [贡献题目和面经](CONTRIBUTING.md)
 
 </div>
 
@@ -23,13 +23,14 @@
 - 这里把开源题目统一成一种 **带标签、带出处** 的格式，谁都可以提 PR 补充新题和新面经。
   面试官用的是你电脑上已经登录的 agent，不需要 API key，也不额外花钱。
 
-## 三种用法
+## 四种用法
 
 | | 适合谁 | 怎么开始 |
 |---|---|---|
 | **网页面试**（推荐） | 想打开网页就开始面试 | `python3 skills/mock-interviewer/scripts/studio.py` |
 | **在 agent 里用** | 平时就在 Claude Code / Codex 里干活 | 装上 skill，说「语音面试我」 |
 | **在线刷题** | 不想装任何东西，只想刷题 | 打开 [GitHub Pages](https://bigerbigernerd.github.io/open-interview/) |
+| **allclose · 手撕** | 准备大模型 / 算法岗的手撕代码 | 网页里的「手撕」，或 `skills/allclose/scripts/allclose.py` |
 
 ## 方式一：网页面试（推荐）
 
@@ -118,6 +119,47 @@ npx skills add bigerbigernerd/open-interview
 - 本地：`studio.py` 或 `voice.py start` 打开的页面里点「自助刷题」
 - 线上：仓库开启 GitHub Pages（Source 选 GitHub Actions）后自动部署到 `https://bigerbigernerd.github.io/open-interview/`
 
+## allclose · 手撕：大模型手撕题，本地评测
+
+![allclose · 手撕：写代码、本地评测、面试官追问](docs/allclose.png)
+
+像力扣一样刷大模型 / 机器学习的手撕题：在网页编辑器里用 numpy 写 Attention、RoPE、KV Cache、
+top-p、BPE、DPO、GRPO……点「提交」，代码在**你自己电脑上**的独立 Python 进程里跑，和参考答案逐个用例比对，
+误差在 `rtol 1e-5 / atol 1e-6` 内（也就是 `np.allclose`）才算过。代码不上传，没有线上评测机。
+
+- **测试专门抓常见错误**：大数值溢出、mask 加错位置、拆头少了 transpose、RoPE 配对方式、top-p 的边界 token、
+  BatchNorm 的有偏 / 无偏方差、AUC 的并列分数…… 每道题都附了几份「典型错误写法」，CI 会确认测试能把它们全部抓出来。
+- **答错时直接告诉你哪里错**：哪个用例、哪个位置、期望值、你的输出、最大误差，以及你 `print` 的内容。
+- **通过之后面试官追问**：真实的手撕面试里写完代码只是开始。用你本机的 Claude Code / Codex / agy / Cursor / OpenCode
+  当面试官，贴着你的代码问 3 个问题（为什么除以 √d？-inf 换成 -1e9 会怎样？），最后打分。卡住时也可以让它看一眼代码给个提示。
+- **网页和命令行共用同一份文件**：代码存在 `~/allclose/<题目>.py`，在 VS Code 里改、在网页里提交都行。
+
+| 方向 | 题数 | 题目 |
+|---|---|---|
+| 大模型 | 18 | 缩放点积注意力（带 mask） · 多头注意力 MHA · 旋转位置编码 RoPE · temperature + top-k + top-p 采样 · 分组查询注意力 GQA · 带 KV Cache 的单步解码 · SwiGLU · LoRA · Beam Search · 字节级 BPE 训练 · MoE 路由 + 负载均衡损失 · DPO · PPO 截断目标 · GRPO · 合并分块注意力结果（FlashAttention 的核心） · CLIP 对比损失 · int8 量化 · 投机解码的验收步骤 |
+| 深度学习 | 8 | 数值稳定的 Softmax · 交叉熵（带 label smoothing） · LayerNorm · RMSNorm · BatchNorm（含 running stats） · AdamW · 手推 MLP 反向传播 · 二维卷积 |
+| 机器学习基础 | 4 | 手写 AUC · 逻辑回归 · K-Means · IoU + NMS |
+
+简单 10 道、中等 14 道、困难 6 道，题面中英双语。
+
+```bash
+# 网页：和模拟面试同一个服务，打开后点「手撕」
+python3 open-interview/skills/mock-interviewer/scripts/studio.py
+
+# 命令行
+cd open-interview/skills/allclose
+python3 scripts/allclose.py list              # 题单，✓ 表示已通过
+python3 scripts/allclose.py pull attention    # 生成 ~/allclose/attention.py，用任何编辑器写
+python3 scripts/allclose.py test attention    # 全部用例；--run 只跑样例
+python3 scripts/allclose.py hint attention    # 下一条提示
+```
+
+评测需要 numpy：当前 Python 有 numpy 就直接用；没有的话如果装了 [uv](https://docs.astral.sh/uv/)，会自动用
+`uv run --with numpy`；都没有就 `pip install numpy`。在线页面（GitHub Pages）只能看题和写草稿，评测和追问都要在本地跑。
+
+在 Claude Code / Codex 里也能用：装上 `allclose` skill 后说「出一道大模型手撕题给我」，agent 会出题、
+在本地评测你的文件、通过后追问。新增题目的格式见 [skills/allclose/SKILL.md](skills/allclose/SKILL.md)。
+
 ## 题库
 
 当前 **5,166** 道题（含 60 份面经里的 893 道），来自 18 个许可证允许再分发的开源项目，每道题都保留了原始链接。题目来源：
@@ -178,6 +220,11 @@ bank/
   tags.yml                  受控标签表：公司（含别名）、岗位（含层级）、题型、职级、常用 topic
   questions/                题目；imported/ 由脚本从上游生成，不要手改
   experiences/              面经，一次面试一个文件；imported/ 由脚本从上游生成
+skills/allclose/            allclose · 手撕（可单独安装的 skill）
+  problems/<id>/            每题一个文件夹：题面、模板、参考答案、测试、典型错误写法
+  scripts/allclose.py       命令行 + 评测（只用标准库）
+  scripts/runner.py         在独立进程里跑你的代码（需要 numpy）
+  data/problems.json        由 tools/build.py 生成
 skills/mock-interviewer/    可单独安装的 skill
   SKILL.md                  面试官流程
   scripts/bank.py           查题（只用标准库）
@@ -186,7 +233,7 @@ skills/mock-interviewer/    可单独安装的 skill
   scripts/backends.py       调用本机 agent CLI 的适配层
   ui/                       面试 + 自助刷题页面（无依赖、无构建）
   data/index.json           由 tools/build.py 生成的题库索引
-tools/build.py              校验 bank/ 并生成索引
+tools/build.py              校验 bank/ 和手撕题，生成索引
 tools/import_upstream.py    重新导入上游题库
 schema/                     给编辑器用的 JSON Schema（YAML 自动补全）
 ```
@@ -204,7 +251,10 @@ schema/                     给编辑器用的 JSON Schema（YAML 自动补全�
 - [ ] 在线刷题页面支持填 OpenAI 兼容的 API key（DeepSeek、通义、Ollama），不装 agent 也能面试
 - [ ] 跨来源去重、难度校准
 - [ ] 更多岗位：数据、测试、运维、产品
+- [ ] 手撕：PyTorch 题目（autograd、自定义 Function）、更多大模型推理和训练题
+- [ ] 手撕：在线页面用 Pyodide 在浏览器里评测（仍然是本地运行）
+- [ ] 手撕：从面经里给题目补「哪家公司考过」的标签
 
 ## License
 
-代码 MIT（[LICENSE](LICENSE)）；题库 CC BY-SA 4.0，第三方来源和许可证见 [LICENSE-DATA.md](LICENSE-DATA.md)。
+代码和 allclose 手撕题 MIT（[LICENSE](LICENSE)）；题库 CC BY-SA 4.0，第三方来源和许可证见 [LICENSE-DATA.md](LICENSE-DATA.md)。

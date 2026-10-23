@@ -1,0 +1,46 @@
+num: 6
+id: multi-head-attention
+title:
+  zh: 多头注意力 MHA（可选 causal）
+  en: Multi-head attention (optionally causal)
+difficulty: medium
+track: llm
+topics: [attention, multi-head, transformer, causal-mask]
+roles: [llm-algorithm, algorithm]
+entry: multi_head_attention
+statement:
+  zh: |
+    实现自注意力层 `multi_head_attention(x, w_q, w_k, w_v, w_o, num_heads, causal=False)`。大模型面试出现频率最高的手撕题。
+
+    - `x`：`(B, T, D)`；`w_q, w_k, w_v, w_o`：都是 `(D, D)`，按 `x @ w` 的方式相乘（没有 bias）。
+    - `num_heads = H`，`D` 能被 `H` 整除，每个头的维度 `Dh = D / H`。第 h 个头用的是投影结果的第 `h·Dh` 到 `(h+1)·Dh` 列。
+    - 每个头内部做缩放点积注意力（除以 `sqrt(Dh)`）；`causal=True` 时，位置 t 只能看到 `≤ t` 的位置。
+    - 把各头的输出按顺序拼回 `(B, T, D)`，再乘 `w_o`。返回 `(B, T, D)`。
+  en: |
+    Implement a self-attention layer `multi_head_attention(x, w_q, w_k, w_v, w_o, num_heads, causal=False)`.
+    The most common hand-coding question in LLM interviews.
+
+    - `x`: `(B, T, D)`; `w_q, w_k, w_v, w_o`: each `(D, D)`, applied as `x @ w` (no bias).
+    - `num_heads = H` divides `D`, head size `Dh = D / H`. Head h uses columns `h·Dh` to `(h+1)·Dh` of each projection.
+    - Each head runs scaled dot-product attention (divide by `sqrt(Dh)`); with `causal=True`, position t only sees positions `≤ t`.
+    - Concatenate the heads back in order to `(B, T, D)` and multiply by `w_o`. Return `(B, T, D)`.
+hints:
+  zh:
+    - 拆头：先 reshape 成 (B, T, H, Dh)，再 transpose 成 (B, H, T, Dh)。直接 reshape 成 (B, H, T, Dh) 会把不同位置的数据混在一起。
+    - causal mask 是下三角：np.tril(np.ones((T, T), bool))。
+    - 合并：transpose 回 (B, T, H, Dh) 再 reshape 成 (B, T, D)。
+  en:
+    - Split heads by reshaping to (B, T, H, Dh) and then transposing to (B, H, T, Dh). Reshaping straight to (B, H, T, Dh) mixes positions.
+    - The causal mask is lower-triangular - np.tril(np.ones((T, T), bool)).
+    - Merge by transposing back to (B, T, H, Dh) and reshaping to (B, T, D).
+followups:
+  zh:
+    - 为什么要多头？多头和单头大头相比，参数量和计算量一样吗？
+    - 推理时怎么用 KV cache？cache 的显存怎么算（举个 7B 模型的例子）？
+    - MQA、GQA 改了什么？对显存和效果各有什么影响？
+    - 如果要支持 padding mask 和 causal mask 同时生效，你会怎么改？
+  en:
+    - Why multiple heads? Compared with one big head, are the parameter count and FLOPs the same?
+    - How is the KV cache used at inference, and how big is it for a 7B model?
+    - What do MQA and GQA change, and how do they affect memory and quality?
+    - How would you support a padding mask and a causal mask at the same time?

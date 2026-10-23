@@ -13,8 +13,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install pyyaml
-      - name: Validate question bank
+      - run: pip install pyyaml numpy
+      - name: Validate question bank and allclose problems
         run: python tools/build.py --check
       - name: Build index and smoke-test the skill scripts
         run: |
@@ -22,3 +22,7 @@ jobs:
           python skills/mock-interviewer/scripts/bank.py stats
           python skills/mock-interviewer/scripts/bank.py sample --role backend -n 3 --seed 1
           python skills/mock-interviewer/scripts/voice.py --help > /dev/null
+      - name: allclose · every reference passes, every starter and buggy variant is caught
+        run: |
+          python skills/allclose/scripts/allclose.py list
+          python skills/allclose/scripts/allclose.py check

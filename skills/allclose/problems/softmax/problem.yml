@@ -1,0 +1,62 @@
+num: 1
+id: softmax
+title:
+  zh: 数值稳定的 Softmax
+  en: Numerically stable softmax
+difficulty: easy
+track: dl
+topics: [softmax, numerical-stability]
+roles: [llm-algorithm, algorithm]
+entry: softmax
+statement:
+  zh: |
+    实现 `softmax(x, axis=-1)`：沿 `axis` 把一个任意形状的实数数组变成概率分布。
+
+    ```
+    softmax(x)_i = exp(x_i) / Σ_j exp(x_j)
+    ```
+
+    - `x`：任意形状的 float 数组；`axis`：在哪一维上归一化，可以是负数。
+    - 返回和 `x` 同形状的数组，沿 `axis` 的每一组都非负、和为 1。
+    - 测试里有 1000 这样的大数，也有 -1000 这样的小数，直接 `exp` 会溢出成 `inf` / `nan`。
+
+    **示例**
+    ```
+    softmax(np.array([1.0, 2.0, 3.0]))
+    → [0.0900, 0.2447, 0.6652]
+    ```
+  en: |
+    Implement `softmax(x, axis=-1)`: turn an array of real numbers of any shape into probability
+    distributions along `axis`.
+
+    ```
+    softmax(x)_i = exp(x_i) / Σ_j exp(x_j)
+    ```
+
+    - `x`: float array of any shape; `axis`: the dimension to normalize over (may be negative).
+    - Return an array of the same shape whose slices along `axis` are non-negative and sum to 1.
+    - The tests include values like 1000 and -1000, where a plain `exp` overflows to `inf` / `nan`.
+
+    **Example**
+    ```
+    softmax(np.array([1.0, 2.0, 3.0]))
+    → [0.0900, 0.2447, 0.6652]
+    ```
+hints:
+  zh:
+    - softmax 对整体平移不变：softmax(x) == softmax(x - c)。c 取什么能保证 exp 一定不溢出？
+    - 求 max 和 sum 的时候加 keepdims=True，广播就不会对错轴。
+  en:
+    - Softmax is shift-invariant, softmax(x) == softmax(x - c). Which c guarantees exp never overflows?
+    - Use keepdims=True for the max and the sum so broadcasting lines up with the right axis.
+followups:
+  zh:
+    - 为什么减去最大值结果不变？减最大值之后还可能下溢吗，下溢有影响吗？
+    - 要算 log_softmax 的话，直接 np.log(softmax(x)) 有什么问题？怎么写更稳？
+    - softmax 的 Jacobian 长什么样？反向传播时怎么不显式构造它？
+    - 温度 T 怎么影响分布？T→0 和 T→∞ 分别退化成什么？
+  en:
+    - Why does subtracting the max leave the result unchanged? Can it still underflow, and does that matter?
+    - What goes wrong with np.log(softmax(x)) for log-softmax, and how would you compute it stably?
+    - What does the softmax Jacobian look like, and how do you backprop without materializing it?
+    - How does a temperature T change the distribution? What do T→0 and T→∞ reduce to?

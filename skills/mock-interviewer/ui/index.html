@@ -6,6 +6,7 @@
 <title>Open Interview</title>
 <meta name="description" content="开源面试题库 + 语音模拟面试：浏览器朗读问题、语音作答，由你的 AI agent 担任面试官。">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%235eead4' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%235eead4'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="vendor/codemirror/codemirror.min.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -15,6 +16,7 @@
   <nav class="tabs" role="tablist">
     <a href="#agent" role="tab" data-tab="agent">模拟面试</a>
     <a href="#practice" role="tab" data-tab="practice">自助刷题</a>
+    <a href="#allclose" role="tab" data-tab="allclose"><span class="tab-mark">≈</span>手撕</a>
   </nav>
   <div class="top-right">
     <span id="status" class="pill">离线</span>
@@ -204,6 +206,101 @@ python3 open-interview/skills/mock-interviewer/scripts/studio.py</pre>
       <ol id="history" class="history"></ol>
     </div>
   </section>
+
+  <!-- ============ allclose · 手撕 ============ -->
+  <section id="view-allclose" class="view" hidden>
+    <div id="ac-list" class="ac-list">
+      <header class="ac-hero">
+        <div class="ac-brand"><span class="ac-mark">≈</span><span>allclose</span><b>· 手撕</b></div>
+        <p class="ac-tag">手撕大模型，本地判对错。代码只在你自己的电脑上运行，通过的标准是和参考答案 <code>allclose</code>。</p>
+        <div class="ac-stats">
+          <div class="ac-prog"><span id="ac-prog-text">0 / 0</span><span class="ac-prog-bar"><i id="ac-prog-bar"></i></span></div>
+          <span id="ac-env" class="ac-env"></span>
+        </div>
+        <div id="ac-offline" class="ac-offline" hidden>
+          <b>这是在线预览，只能看题。</b>评测在你自己的电脑上跑，不上传代码：
+          <pre><code>git clone https://github.com/bigerbigernerd/open-interview
+python3 open-interview/skills/mock-interviewer/scripts/studio.py</code></pre>
+          打开它打印的地址，切到「手撕」。也可以只用命令行：<code>python3 open-interview/skills/allclose/scripts/allclose.py list</code>
+        </div>
+      </header>
+      <div class="ac-filters">
+        <div class="seg" id="ac-f-track" role="group" aria-label="方向">
+          <button type="button" data-v="">全部</button><button type="button" data-v="ml">机器学习基础</button><button type="button" data-v="dl">深度学习</button><button type="button" data-v="llm">大模型</button>
+        </div>
+        <div class="seg" id="ac-f-diff" role="group" aria-label="难度">
+          <button type="button" data-v="">全部难度</button><button type="button" data-v="easy">简单</button><button type="button" data-v="medium">中等</button><button type="button" data-v="hard">困难</button>
+        </div>
+        <div class="seg" id="ac-f-status" role="group" aria-label="状态">
+          <button type="button" data-v="">全部</button><button type="button" data-v="todo">未通过</button><button type="button" data-v="done">已通过</button>
+        </div>
+      </div>
+      <ol id="ac-rows" class="ac-rows"></ol>
+    </div>
+
+    <div id="ac-ws" class="ac-ws" hidden>
+      <div class="ac-bar">
+        <a class="ac-back" href="#allclose">← 题单</a>
+        <div class="ac-title"><span id="ac-no" class="ac-no"></span><b id="ac-name"></b><span id="ac-diff" class="ac-diff"></span><span id="ac-done" class="ac-done" hidden>✓ 已通过</span></div>
+        <div class="ac-nav">
+          <a id="ac-prev" class="ac-step" href="#allclose" title="上一题">‹</a><a id="ac-next" class="ac-step" href="#allclose" title="下一题">›</a>
+        </div>
+        <div class="ac-actions">
+          <button id="ac-run" type="button" title="只跑样例，不记录">运行 <kbd>⌘↵</kbd></button>
+          <button id="ac-submit" class="primary" type="button" title="跑全部用例并记录进度">提交 <kbd>⌘⇧↵</kbd></button>
+        </div>
+      </div>
+      <div class="ac-split">
+        <section class="ac-left">
+          <nav class="ac-tabs" role="tablist">
+            <button type="button" data-pane="desc" aria-selected="true">题目</button>
+            <button type="button" data-pane="hints">提示</button>
+            <button type="button" data-pane="solution">题解</button>
+            <button type="button" data-pane="followup">面试官追问<i id="ac-fu-dot" class="ac-dot" hidden></i></button>
+          </nav>
+          <div class="ac-pane md" data-pane="desc" id="ac-desc"></div>
+          <div class="ac-pane" data-pane="hints" hidden>
+            <ol id="ac-hints" class="ac-hints"></ol>
+            <div class="ac-row">
+              <button id="ac-hint-next" type="button">看下一条提示</button>
+              <button id="ac-hint-ai" type="button" title="把你的代码和最近一次评测结果交给面试官，让他点拨一句">让 AI 看看我的代码</button>
+            </div>
+            <div id="ac-hint-ai-out" class="ac-bubble md" hidden></div>
+          </div>
+          <div class="ac-pane" data-pane="solution" hidden>
+            <p class="ac-note" id="ac-sol-note">先自己写，卡住了再看。</p>
+            <button id="ac-sol-show" type="button">显示参考答案</button>
+            <pre id="ac-sol" class="ac-sol" hidden><code></code></pre>
+          </div>
+          <div class="ac-pane ac-fu" data-pane="followup" hidden>
+            <p class="ac-note" id="ac-fu-note">真实的手撕面试里，写完代码只是开始。提交通过后，面试官会贴着你的代码追问 3 个问题，最后打分。</p>
+            <div class="ac-fu-setup">
+              <div class="opts" id="ac-fu-backend" role="group" aria-label="面试官"></div>
+              <label class="ac-speak"><input type="checkbox" id="ac-fu-voice"> 朗读</label>
+              <button id="ac-fu-start" class="primary" type="button">开始追问</button>
+            </div>
+            <ol id="ac-fu-log" class="ac-fu-log"></ol>
+            <div id="ac-fu-input" class="ac-fu-input" hidden>
+              <textarea id="ac-fu-text" rows="3" placeholder="你的回答（⌘↵ 发送）"></textarea>
+              <button id="ac-fu-send" class="primary" type="button">发送</button>
+            </div>
+          </div>
+        </section>
+        <section class="ac-right">
+          <div class="ac-editor-head">
+            <span class="ac-file" id="ac-file">solution.py</span>
+            <span class="ac-saved" id="ac-saved"></span>
+            <button id="ac-reset" class="link danger" type="button">重置代码</button>
+          </div>
+          <div class="ac-editor" id="ac-editor"><textarea id="ac-code" spellcheck="false"></textarea></div>
+          <div class="ac-console" id="ac-console">
+            <div class="ac-console-head"><b>评测结果</b><span id="ac-verdict" class="ac-verdict"></span></div>
+            <div id="ac-result" class="ac-result"><p class="ac-note">「运行」只跑样例；「提交」跑全部用例（含溢出、边界、大规模），通过后记录进度。</p></div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </section>
 </main>
 
 <div id="report" class="overlay" hidden>
@@ -237,6 +334,13 @@ python3 open-interview/skills/mock-interviewer/scripts/studio.py</pre>
   </form>
 </dialog>
 
+<script src="vendor/codemirror/codemirror.min.js"></script>
+<script src="vendor/codemirror/python.min.js"></script>
+<script src="vendor/codemirror/matchbrackets.min.js"></script>
+<script src="vendor/codemirror/closebrackets.min.js"></script>
+<script src="vendor/codemirror/comment.min.js"></script>
+<script src="vendor/codemirror/active-line.min.js"></script>
 <script src="app.js"></script>
+<script src="allclose.js"></script>
 </body>
 </html>

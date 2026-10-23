@@ -1,0 +1,47 @@
+num: 14
+id: kmeans
+title:
+  zh: K-Means（Lloyd 迭代）
+  en: K-means (Lloyd iterations)
+difficulty: medium
+track: ml
+topics: [clustering, kmeans, vectorization]
+roles: [algorithm]
+entry: kmeans
+statement:
+  zh: |
+    实现 K-Means：`kmeans(X, init_centroids, n_iters)`，返回 `(centroids, labels)`。
+
+    - `X`：`(N, D)`；`init_centroids`：`(K, D)`，固定的初始中心（不用随机初始化）。
+    - 重复 `n_iters` 次：
+      1. **分配**：每个点分给欧氏距离最近的中心，距离相同取编号小的。
+      2. **更新**：每个中心变成分给它的点的均值；**没有分到点的中心保持不变**。
+    - 返回最后一次更新后的 `centroids`（`(K, D)`）和最后一次分配的 `labels`（`(N,)` 整数）。不要提前停止。
+    - 要用向量化写法算距离，测试里有 N = 20000 的用例。
+  en: |
+    Implement K-means: `kmeans(X, init_centroids, n_iters)`, returning `(centroids, labels)`.
+
+    - `X`: `(N, D)`; `init_centroids`: `(K, D)`, fixed starting centers (no random init).
+    - Repeat `n_iters` times:
+      1. **Assign** each point to the nearest center by Euclidean distance; ties go to the lower index.
+      2. **Update** each center to the mean of its points; **a center with no points stays where it is**.
+    - Return `centroids` after the last update (`(K, D)`) and `labels` from the last assignment (`(N,)` ints). No early stopping.
+    - Compute distances in vectorized form; one case has N = 20000.
+hints:
+  zh:
+    - "`((X[:, None, :] - C[None, :, :]) ** 2).sum(-1)` 得到 `(N, K)` 的距离平方，`argmin(1)` 就是标签（平局取小编号）。"
+    - 更新时先判断 `mask = labels == k` 是否为空，空的话别求均值（会得到 NaN）。
+  en:
+    - "`((X[:, None, :] - C[None, :, :]) ** 2).sum(-1)` gives the `(N, K)` squared distances; `argmin(1)` is the label (ties go low)."
+    - When updating, check whether `mask = labels == k` is empty; the mean of nothing is NaN.
+followups:
+  zh:
+    - K-Means 一定会收敛吗？会收敛到全局最优吗？
+    - K-Means++ 的初始化是怎么做的，为什么有用？
+    - 怎么选 K？肘部法则和轮廓系数各有什么问题？
+    - 数据量上亿时怎么做（Mini-batch K-Means、向量检索里的 IVF）？
+  en:
+    - Does K-means always converge, and to the global optimum?
+    - How does K-means++ initialize, and why does it help?
+    - How do you choose K, and what are the weaknesses of the elbow method and silhouette scores?
+    - How would you run it on hundreds of millions of points (mini-batch K-means, IVF in vector search)?

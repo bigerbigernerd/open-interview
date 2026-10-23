@@ -1,0 +1,50 @@
+num: 15
+id: nms
+title:
+  zh: IoU + 非极大值抑制 NMS
+  en: IoU and non-maximum suppression
+difficulty: medium
+track: ml
+topics: [detection, iou, nms, computer-vision]
+roles: [algorithm]
+entry: nms
+time_limit: 2
+statement:
+  zh: |
+    实现目标检测里的贪心 NMS：`nms(boxes, scores, iou_threshold)`，返回保留下来的框的下标列表。
+
+    - `boxes`：`(N, 4)`，每行 `[x1, y1, x2, y2]`，`x2 > x1`，`y2 > y1`，是连续坐标：面积 = `(x2 - x1) · (y2 - y1)`（**不加 1**）。
+    - `scores`：`(N,)`。
+    - 流程：按分数从高到低（分数相同时下标小的在前），每次取出当前最高分的框保留下来，删掉和它 **IoU 严格大于** `iou_threshold` 的框，重复直到没有框。
+    - 返回保留框的下标（整数 list 或数组），按被选中的顺序排列。
+    - 有一个 N = 2000 的用例，限时 2 秒。
+  en: |
+    Implement greedy NMS from object detection: `nms(boxes, scores, iou_threshold)`, returning the indices of the kept boxes.
+
+    - `boxes`: `(N, 4)`, rows `[x1, y1, x2, y2]` with `x2 > x1`, `y2 > y1`, in continuous coordinates: area =
+      `(x2 - x1) · (y2 - y1)` (**no +1**).
+    - `scores`: `(N,)`.
+    - Repeatedly keep the highest-scoring remaining box (ties: lower index first) and drop every box whose
+      **IoU is strictly greater** than `iou_threshold` with it, until no boxes remain.
+    - Return the kept indices (a list or array of ints) in the order they were selected.
+    - One case has N = 2000 with a 2 s limit.
+hints:
+  zh:
+    - "`order = np.argsort(-scores, kind='stable')` 处理好平局。"
+    - 交集：`np.maximum` 取左上角、`np.minimum` 取右下角，宽高用 `np.clip(..., 0, None)` 防止负数。
+    - 每轮把当前框和剩下的所有框一次性向量化地算 IoU。
+  en:
+    - "`order = np.argsort(-scores, kind='stable')` handles ties."
+    - "Intersection: `np.maximum` of the top-left corners, `np.minimum` of the bottom-right; clip width and height at 0."
+    - Compute the IoU of the current box against all remaining boxes in one vectorized step.
+followups:
+  zh:
+    - NMS 的时间复杂度是多少？框很多时怎么加速？
+    - 密集遮挡场景下 NMS 有什么问题？Soft-NMS 是怎么改的？
+    - 多类别检测时，NMS 是按类别分别做还是一起做？batched NMS 有什么小技巧？
+    - DETR 为什么不需要 NMS？
+  en:
+    - What is the time complexity of NMS, and how do you speed it up with many boxes?
+    - What goes wrong in crowded scenes, and how does Soft-NMS change it?
+    - With many classes, do you run NMS per class or jointly? What is the trick behind batched NMS?
+    - Why doesn't DETR need NMS?

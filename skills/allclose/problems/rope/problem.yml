@@ -1,0 +1,52 @@
+num: 7
+id: rope
+title:
+  zh: 旋转位置编码 RoPE
+  en: Rotary position embedding (RoPE)
+difficulty: medium
+track: llm
+topics: [rope, positional-encoding, llama]
+roles: [llm-algorithm]
+entry: apply_rope
+statement:
+  zh: |
+    实现 `apply_rope(x, positions, base=10000.0)`，按 LLaMA（HuggingFace 实现）的 “rotate half” 约定给 q 或 k 加上旋转位置编码。
+
+    - `x`：`(..., T, D)`，`D` 是偶数；`positions`：长度为 `T` 的整数数组，第 t 行对应位置 `positions[t]`。
+    - 频率：`inv_freq[i] = base^(-2i / D)`，`i = 0 … D/2 - 1`；角度 `θ[t, i] = positions[t] · inv_freq[i]`。
+    - 把 `cos θ`、`sin θ` 各自在最后一维上拼两遍得到 `(T, D)` 的 `cos`、`sin`。
+    - `rotate_half(x) = concat(-x[..., D/2:], x[..., :D/2])`（后半取负放前面，前半放后面）。
+    - 输出 `x · cos + rotate_half(x) · sin`，形状和 `x` 一样。
+
+    **示例**：位置 0 的向量保持不变；`D = 2` 时就是把二维向量逆时针转 `position` 弧度。
+  en: |
+    Implement `apply_rope(x, positions, base=10000.0)` with the "rotate half" convention used by LLaMA in
+    HuggingFace transformers.
+
+    - `x`: `(..., T, D)` with even `D`; `positions`: integer array of length `T`, row t sits at `positions[t]`.
+    - Frequencies `inv_freq[i] = base^(-2i / D)` for `i = 0 … D/2 - 1`; angles `θ[t, i] = positions[t] · inv_freq[i]`.
+    - Tile `cos θ` and `sin θ` twice along the last axis to get `(T, D)` arrays `cos` and `sin`.
+    - `rotate_half(x) = concat(-x[..., D/2:], x[..., :D/2])` (negated second half first, then the first half).
+    - Return `x · cos + rotate_half(x) · sin`, shaped like `x`.
+
+    **Example**: a vector at position 0 is unchanged; with `D = 2` it is a counter-clockwise rotation by `position` radians.
+hints:
+  zh:
+    - inv_freq = base ** (-np.arange(0, D, 2) / D)，注意是 2i/D，不是 i/D。
+    - 用 np.outer(positions, inv_freq) 得到 (T, D/2) 的角度，再 np.concatenate([θ, θ], -1)。
+    - (T, D) 的 cos、sin 会自动广播到 (..., T, D)。
+  en:
+    - inv_freq = base ** (-np.arange(0, D, 2) / D) - note 2i/D, not i/D.
+    - np.outer(positions, inv_freq) gives the (T, D/2) angles; then np.concatenate([θ, θ], -1).
+    - (T, D) cos and sin broadcast over (..., T, D) automatically.
+followups:
+  zh:
+    - 为什么 RoPE 能让 q·k 只依赖相对位置？推导一下。
+    - “rotate half” 和原论文的相邻两两配对（interleaved）有什么区别？加载权重时要注意什么？
+    - 想把上下文从 4k 扩到 32k，有哪些办法（位置插值、NTK-aware、YaRN）？分别改了什么？
+    - RoPE 加在 q、k 上，为什么不加在 v 上？
+  en:
+    - Why does RoPE make q·k depend only on relative position? Derive it.
+    - How does "rotate half" differ from the paper's interleaved pairs, and what does that mean when loading weights?
+    - How would you extend a 4k context to 32k (position interpolation, NTK-aware, YaRN), and what does each change?
+    - RoPE is applied to q and k - why not v?

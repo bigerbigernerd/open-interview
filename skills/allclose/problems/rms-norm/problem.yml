@@ -1,0 +1,47 @@
+num: 9
+id: rms-norm
+title:
+  zh: RMSNorm
+  en: RMSNorm
+difficulty: easy
+track: dl
+topics: [normalization, rmsnorm, llama]
+roles: [llm-algorithm]
+entry: rms_norm
+statement:
+  zh: |
+    实现 LLaMA 用的 RMSNorm：`rms_norm(x, weight, eps=1e-6)`，对最后一维归一化。
+
+    ```
+    y = x / sqrt(mean(x², 最后一维) + eps) * weight
+    ```
+
+    - `x`：`(..., D)`；`weight`：`(D,)`。返回和 `x` 同形状。
+    - 和 LayerNorm 不同：**不减均值，也没有 bias**。
+    - 测试里有数值很小（1e-4 量级）的输入，eps 放错位置结果会差很多。
+  en: |
+    Implement the RMSNorm used by LLaMA, `rms_norm(x, weight, eps=1e-6)`, over the last dimension.
+
+    ```
+    y = x / sqrt(mean(x², last dim) + eps) * weight
+    ```
+
+    - `x`: `(..., D)`; `weight`: `(D,)`. Return an array shaped like `x`.
+    - Unlike LayerNorm, there is **no mean subtraction and no bias**.
+    - Some inputs are tiny (around 1e-4), where putting eps in the wrong place changes the result a lot.
+hints:
+  zh:
+    - "`np.mean(x * x, axis=-1, keepdims=True)` 就是均方。"
+    - eps 加在 sqrt 里面，和 LLaMA 的实现一致。
+  en:
+    - "`np.mean(x * x, axis=-1, keepdims=True)` is the mean square."
+    - eps goes inside the square root, as in LLaMA.
+followups:
+  zh:
+    - RMSNorm 比 LayerNorm 省掉了什么计算？为什么去掉均值中心化影响不大？
+    - 混合精度训练时，RMSNorm 一般在什么精度下算？为什么？
+    - Pre-norm 结构里，最后一层之后为什么还要再接一个 norm？
+  en:
+    - What computation does RMSNorm save over LayerNorm, and why doesn't dropping mean-centering hurt much?
+    - In mixed-precision training, in which precision is RMSNorm usually computed, and why?
+    - In a pre-norm Transformer, why is there one more norm after the last block?

@@ -1,0 +1,44 @@
+num: 17
+id: grouped-query-attention
+title:
+  zh: 分组查询注意力 GQA
+  en: Grouped-query attention (GQA)
+difficulty: medium
+track: llm
+topics: [attention, gqa, mqa, kv-cache]
+roles: [llm-algorithm]
+entry: grouped_query_attention
+statement:
+  zh: |
+    实现 LLaMA 2/3、Qwen 用的分组查询注意力：`grouped_query_attention(q, k, v, causal=False)`。
+
+    - `q`：`(B, Hq, T, D)`；`k`、`v`：`(B, Hkv, T, D)`，`Hq` 能被 `Hkv` 整除，组大小 `g = Hq / Hkv`。
+    - 第 `h` 个 query 头使用第 `h // g` 个 kv 头（相邻的 g 个 query 头共享一组 kv，和 HuggingFace 的 `repeat_kv` 一致）。
+    - 每个头做缩放点积注意力（除以 `sqrt(D)`）；`causal=True` 时位置 t 只能看到 `≤ t` 的位置。
+    - 返回 `(B, Hq, T, D)`。`Hkv = Hq` 时就是普通多头注意力，`Hkv = 1` 时就是 MQA。
+  en: |
+    Implement the grouped-query attention of LLaMA 2/3 and Qwen: `grouped_query_attention(q, k, v, causal=False)`.
+
+    - `q`: `(B, Hq, T, D)`; `k`, `v`: `(B, Hkv, T, D)` where `Hkv` divides `Hq`, group size `g = Hq / Hkv`.
+    - Query head `h` uses kv head `h // g`: each run of g adjacent query heads shares one kv head, as in
+      HuggingFace's `repeat_kv`.
+    - Each head runs scaled dot-product attention (divide by `sqrt(D)`); with `causal=True`, position t only sees positions `≤ t`.
+    - Return `(B, Hq, T, D)`. With `Hkv = Hq` this is plain multi-head attention; with `Hkv = 1` it is MQA.
+hints:
+  zh:
+    - "`np.repeat(k, g, axis=1)` 把 kv 头复制成 Hq 个：顺序是 0,0,1,1,…，不是 `np.tile` 的 0,1,0,1。"
+    - 复制之后就和普通多头注意力一样了。
+  en:
+    - "`np.repeat(k, g, axis=1)` expands the kv heads to Hq in the order 0,0,1,1,…, not `np.tile`'s 0,1,0,1."
+    - After that it is ordinary multi-head attention.
+followups:
+  zh:
+    - GQA 省的是什么？KV cache 能省多少，举个具体模型的例子？
+    - 推理时真的要把 kv 复制 g 份吗？高效的 kernel 是怎么做的？
+    - 把一个 MHA 模型转成 GQA，kv 头的权重怎么初始化？
+    - MLA（DeepSeek）又是怎么进一步压缩 KV cache 的？
+  en:
+    - What does GQA save, and how much KV cache does it save for a concrete model?
+    - Do inference kernels really copy the kv heads g times? How do efficient kernels handle it?
+    - When converting an MHA checkpoint to GQA, how do you initialize the kv heads?
+    - How does DeepSeek's MLA compress the KV cache further?

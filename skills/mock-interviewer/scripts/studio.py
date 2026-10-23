@@ -272,15 +272,19 @@ def main():
     ap.add_argument("--no-open", action="store_true")
     a = ap.parse_args()
     studio = Studio()
-    handler = voice.make_handler(studio.bridge, get_routes={"/api/studio": studio.info},
+    ac_get, ac_post = voice.allclose_routes(ai=lambda bid, model, prompt, final:
+                                            backends.complete(bid, prompt, (model or "").strip() or None, final))
+    handler = voice.make_handler(studio.bridge, get_routes={"/api/studio": studio.info, **ac_get},
                                  post_routes={"/api/studio/start": studio.start, "/api/studio/retry": studio.retry,
-                                              "/api/studio/stop": studio.stop})
+                                              "/api/studio/stop": studio.stop, **ac_post})
     port = voice.free_port(a.port)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
     httpd.daemon_threads = True
     url = f"http://127.0.0.1:{port}/#agent"
     found = [b["name"] for b in backends.detect() if b["available"]]
     print(f"Open Interview studio: {url}")
+    if ac_get:
+        print(f"allclose · 手撕:       http://127.0.0.1:{port}/#allclose")
     print(f"backends found: {', '.join(found) or 'none (install Claude Code, Codex, agy, Cursor Agent or OpenCode)'}")
     print("Ctrl+C to stop.")
     if not a.no_open:

@@ -1,0 +1,49 @@
+num: 24
+id: dpo-loss
+title:
+  zh: DPO 损失
+  en: DPO loss
+difficulty: easy
+track: llm
+topics: [alignment, dpo, preference-learning, rlhf]
+roles: [llm-algorithm]
+entry: dpo_loss
+statement:
+  zh: |
+    实现 Direct Preference Optimization 的损失：
+
+    `dpo_loss(policy_chosen_logps, policy_rejected_logps, ref_chosen_logps, ref_rejected_logps, beta=0.1)`
+    返回 `(loss, chosen_rewards, rejected_rewards)`。
+
+    - 四个输入都是 `(N,)`：策略模型 / 参考模型在 chosen、rejected 回复上的**整句对数概率**。
+    - `chosen_rewards = beta · (policy_chosen - ref_chosen)`，`rejected_rewards = beta · (policy_rejected - ref_rejected)`。
+    - `loss = mean(-log σ(chosen_rewards - rejected_rewards))`，返回 float。
+    - 测试里有差距上千的对数概率，`np.log(sigmoid(z))` 会算出 `log(0) = -inf`。
+  en: |
+    Implement the Direct Preference Optimization loss:
+
+    `dpo_loss(policy_chosen_logps, policy_rejected_logps, ref_chosen_logps, ref_rejected_logps, beta=0.1)`
+    returns `(loss, chosen_rewards, rejected_rewards)`.
+
+    - All four inputs are `(N,)`: **sequence-level log-probabilities** of the chosen and rejected responses under the policy and the reference model.
+    - `chosen_rewards = beta · (policy_chosen - ref_chosen)`, `rejected_rewards = beta · (policy_rejected - ref_rejected)`.
+    - `loss = mean(-log σ(chosen_rewards - rejected_rewards))`, returned as a float.
+    - Some log-probabilities differ by thousands, where `np.log(sigmoid(z))` gives `log(0) = -inf`.
+hints:
+  zh:
+    - "`-log σ(z) = log(1 + e^{-z}) = np.logaddexp(0, -z)`，对很大或很小的 z 都稳定。"
+    - beta 乘在对数概率差上，不是乘在损失上。
+  en:
+    - "`-log σ(z) = log(1 + e^{-z}) = np.logaddexp(0, -z)`, stable for large and small z."
+    - beta scales the log-probability differences, not the loss.
+followups:
+  zh:
+    - DPO 是怎么从 RLHF 的目标推导出来的？隐式奖励是什么？
+    - beta 起什么作用？调大调小分别会怎样？
+    - DPO 训练中经常看到 chosen 的对数概率也在下降，为什么？有什么改进（比如 IPO、SimPO）？
+    - 和 PPO 式的 RLHF 相比，DPO 的优缺点是什么？
+  en:
+    - How is DPO derived from the RLHF objective, and what is the implicit reward?
+    - What does beta do, and what happens if you raise or lower it?
+    - Why does the chosen log-probability often fall during DPO training, and what do IPO or SimPO change?
+    - What are DPO's pros and cons compared with PPO-style RLHF?

@@ -1,0 +1,49 @@
+num: 25
+id: ppo-clip-loss
+title:
+  zh: PPO 截断目标（token 级，带 mask）
+  en: PPO clipped objective (token-level, masked)
+difficulty: medium
+track: llm
+topics: [rlhf, ppo, policy-gradient]
+roles: [llm-algorithm]
+entry: ppo_clip_loss
+statement:
+  zh: |
+    实现 RLHF 里 PPO 的策略损失：`ppo_clip_loss(logp_new, logp_old, advantages, mask=None, clip_eps=0.2)`，返回 `(loss, clip_frac)`。
+
+    - 输入都是 `(B, T)`：新策略 / 采样时旧策略在每个 token 上的对数概率、每个 token 的优势值；`mask` 是 0/1，1 表示参与计算（`None` 表示全部参与）。
+    - `ratio = exp(logp_new - logp_old)`
+    - `obj = min(ratio · A, clip(ratio, 1 - clip_eps, 1 + clip_eps) · A)`
+    - `loss = -(mask 内 obj 的平均)`，返回 float。
+    - `clip_frac` = mask 内 `|ratio - 1| > clip_eps` 的比例，返回 float。
+  en: |
+    Implement PPO's policy loss as used in RLHF: `ppo_clip_loss(logp_new, logp_old, advantages, mask=None, clip_eps=0.2)`,
+    returning `(loss, clip_frac)`.
+
+    - All inputs are `(B, T)`: per-token log-probabilities under the new policy and the old (sampling) policy, and
+      per-token advantages; `mask` is 0/1 where 1 means the token counts (`None` means all tokens count).
+    - `ratio = exp(logp_new - logp_old)`
+    - `obj = min(ratio · A, clip(ratio, 1 - clip_eps, 1 + clip_eps) · A)`
+    - `loss = -(mean of obj over masked tokens)`, as a float.
+    - `clip_frac` = share of masked tokens with `|ratio - 1| > clip_eps`, as a float.
+hints:
+  zh:
+    - ratio 用对数概率之差再取 exp，别直接除对数概率。
+    - 取 min 是“悲观”下界：优势为正时限制 ratio 涨太多，为负时限制 ratio 跌太多。
+    - 带 mask 的平均：`(obj * mask).sum() / mask.sum()`。
+  en:
+    - Get the ratio by exponentiating the log-prob difference; don't divide log-probs.
+    - The min is a pessimistic bound - it caps the gain from pushing the ratio too far in the advantage's direction.
+    - "Masked mean: `(obj * mask).sum() / mask.sum()`."
+followups:
+  zh:
+    - 为什么要 clip？只用 KL 惩罚行不行？
+    - RLHF 里 PPO 需要几个模型同时在显存里？分别是做什么的？
+    - token 级损失是先在句内平均还是全部 token 一起平均？对长短回复有什么影响？
+    - GAE 是怎么算优势的？λ 和 γ 各控制什么？
+  en:
+    - Why clip at all? Could a KL penalty alone do the job?
+    - How many models does PPO-based RLHF keep in memory, and what does each do?
+    - Should token losses be averaged per sequence first or over all tokens, and how does that treat long vs short responses?
+    - How does GAE compute advantages, and what do λ and γ control?

@@ -1,0 +1,43 @@
+num: 20
+id: lora
+title:
+  zh: LoRA 线性层前向与合并
+  en: LoRA linear layer forward and merge
+difficulty: easy
+track: llm
+topics: [lora, peft, fine-tuning]
+roles: [llm-algorithm]
+entry: lora_linear
+statement:
+  zh: |
+    实现带 LoRA 的线性层：`lora_linear(x, w, a, b, alpha, merge=False)`。
+
+    - `x`：`(..., D_in)`；冻结的权重 `w`：`(D_in, D_out)`；低秩矩阵 `a`：`(D_in, r)`，`b`：`(r, D_out)`。
+    - 缩放系数 `scaling = alpha / r`（r 从 `a` 的形状读）。
+    - `merge=False`：返回 `y = x @ w + scaling · (x @ a) @ b`，形状 `(..., D_out)`。
+    - `merge=True`：返回合并后的权重 `w + scaling · a @ b`，形状 `(D_in, D_out)`（这时忽略 `x`）。
+  en: |
+    Implement a linear layer with LoRA: `lora_linear(x, w, a, b, alpha, merge=False)`.
+
+    - `x`: `(..., D_in)`; frozen weight `w`: `(D_in, D_out)`; low-rank factors `a`: `(D_in, r)`, `b`: `(r, D_out)`.
+    - The scaling is `alpha / r` (read r from `a`'s shape).
+    - `merge=False`: return `y = x @ w + scaling · (x @ a) @ b`, shaped `(..., D_out)`.
+    - `merge=True`: return the merged weight `w + scaling · a @ b`, shaped `(D_in, D_out)` (ignore `x`).
+hints:
+  zh:
+    - 先算 `x @ a`（得到 r 维）再乘 `b`，比先算 `a @ b` 再乘 x 省很多计算。
+    - 缩放是 alpha 除以 r，不是 alpha 本身。
+  en:
+    - Computing `x @ a` (r-dimensional) before multiplying by `b` is much cheaper than forming `a @ b` first.
+    - The scaling is alpha divided by r, not alpha itself.
+followups:
+  zh:
+    - LoRA 为什么把 B 初始化成 0？A 和 B 都初始化成 0 行不行？
+    - 为什么要除以 r？改变 r 时 alpha 该怎么调？
+    - 推理时合并权重有什么好处？多个 LoRA 同时服务（multi-LoRA serving）时为什么又不合并？
+    - QLoRA 在 LoRA 基础上做了什么？
+  en:
+    - Why is B initialized to zero, and could both A and B start at zero?
+    - Why divide by r, and how should alpha change when r changes?
+    - What does merging the weights buy at inference, and why don't multi-LoRA servers merge?
+    - What does QLoRA add on top of LoRA?
