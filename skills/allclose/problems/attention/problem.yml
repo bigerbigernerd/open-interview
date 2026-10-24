@@ -7,6 +7,9 @@ difficulty: medium
 track: llm
 topics: [attention, transformer, masking, softmax]
 roles: [llm-algorithm, algorithm]
+companies:
+  - company: alibaba
+    source: https://github.com/CoderJackZhu/CoderJackZhu.github.io/blob/ded53b7d54b3b07198379982d4fcc2c4d4942bce/src/content/blog/%E6%B7%98%E5%A4%A9%E6%9A%91%E6%9C%9F%E5%AE%9E%E4%B9%A0%E9%9D%A2%E8%AF%95%E5%88%86%E4%BA%AB/index.md
 entry: attention
 statement:
   zh: |
