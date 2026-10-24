@@ -380,8 +380,9 @@ def build_problems(tags, rep):
             if r not in tags["roles"]:
                 rep.err(where, f"unknown role '{r}'{suggest(r, tags['roles'])}")
         for c in as_list(p.get("companies")):
-            if not isinstance(c, dict) or c.get("company") not in tags["companies"] or not c.get("source"):
-                rep.err(where, "companies entries need {company: <tags.yml slug>, source: <面经 url>}")
+            if (not isinstance(c, dict) or c.get("company") not in tags["companies"]
+                    or not str(c.get("source", "")).startswith("https://")):
+                rep.err(where, "companies entries need {company: <tags.yml slug>, source: <https 面经 url>}")
         for field in ("title", "statement"):
             if not isinstance(p.get(field), dict) or not all(p[field].get(l) for l in LANGS):
                 rep.err(where, f"{field} needs both zh and en")
@@ -404,6 +405,11 @@ def build_problems(tags, rep):
         except SyntaxError as e:
             rep.err(where, str(e))
         p["topics"] = as_list(p.get("topics"))
+        p["companies"] = [{"company": c["company"], "source": c["source"],  # display names for the UI
+                           "name": tags["companies"][c["company"]]["name"],
+                           "en": tags["companies"][c["company"]].get("en") or c["company"]}
+                          for c in as_list(p.get("companies"))
+                          if isinstance(c, dict) and c.get("company") in tags["companies"]]
         p["roles"] = as_list(p.get("roles"))
         p["starter"] = (d / "starter.py").read_text(encoding="utf-8")
         p["solution"] = (d / "solution.py").read_text(encoding="utf-8")

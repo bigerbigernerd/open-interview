@@ -45,6 +45,35 @@
     return S.loading;
   }
   const tilde = (path) => String(path || '').replace(/^(\/home\/|\/Users\/)[^/\\]+/, '~').replace(/^[A-Z]:\\Users\\[^\\]+/, '~');
+  // "CoderJackZhu 的面经：淘天暑期实习面试分享" from a GitHub blob URL; used as the chip's tooltip.
+  function srcTitle(url) {
+    try {
+      const u = new URL(url);
+      const parts = u.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+      const owner = u.hostname === 'github.com' ? parts[0] : u.hostname;
+      let name = parts[parts.length - 1] || '';
+      if (/^(index|readme)\.mdx?$/i.test(name)) name = parts[parts.length - 2] || name;
+      return `${owner} 的面经：${name.replace(/\.(mdx?|html?)$/i, '')}`;
+    } catch { return '面经出处'; }
+  }
+  // One chip per company: 「阿里巴巴 面经考过 ↗」 linking to the first source. In the problem list the row is
+  // already a link, so the chip is a span that opens the source itself.
+  function companyChips(p, inLink) {
+    const by = new Map();
+    for (const c of p.companies || []) {
+      if (!/^https?:\/\//.test(c.source || '')) continue;
+      if (!by.has(c.company)) by.set(c.company, []);
+      by.get(c.company).push(c);
+    }
+    return [...by.values()].map((list) => {
+      const c = list[0];
+      const tip = esc(srcTitle(c.source) + (list.length > 1 ? `（另有 ${list.length - 1} 份）` : ''));
+      const label = `${esc(c.name || c.company)} 面经考过 <i>↗</i>`;
+      return inLink
+        ? `<span class="ac-co" role="link" tabindex="0" data-href="${esc(c.source)}" title="${tip}">${label}</span>`
+        : `<a class="ac-co" href="${esc(c.source)}" target="_blank" rel="noopener" title="${tip}">${label}</a>`;
+    }).join('');
+  }
   const passed = (id) => Boolean(S.progress[id] && S.progress[id].passed);
   const tried = (id) => Boolean(S.progress[id] && S.progress[id].submits);
 
@@ -78,6 +107,16 @@
     });
     paint();
   }
+  const openChip = (e) => {
+    const chip = e.target.closest('.ac-co[data-href]');
+    if (!chip) return false;
+    e.preventDefault();
+    e.stopPropagation();
+    window.open(chip.dataset.href, '_blank', 'noopener');
+    return true;
+  };
+  $('#ac-rows').addEventListener('click', openChip);
+  $('#ac-rows').addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') openChip(e); });
   segBind('#ac-f-track', 'track', renderList);
   segBind('#ac-f-diff', 'diff', renderList);
   segBind('#ac-f-status', 'status', renderList);
@@ -90,7 +129,7 @@
       <li><a class="ac-item${passed(p.id) ? ' done' : ''}" href="#allclose/${p.id}">
         <span class="ac-check">${passed(p.id) ? '✓' : tried(p.id) ? '•' : ''}</span>
         <span class="ac-num">${String(p.no).padStart(2, '0')}</span>
-        <span class="ac-t"><b>${esc(p.title.zh)}</b><small>${esc(p.title.en)}</small></span>
+        <span class="ac-t"><span class="ac-trow"><b>${esc(p.title.zh)}</b>${companyChips(p, true)}</span><small>${esc(p.title.en)}</small></span>
         <span class="ac-topics">${(p.topics || []).slice(0, 3).map((t) => `<i>${esc(t)}</i>`).join('')}</span>
         <span class="ac-track">${TRACK[p.track]}</span>
         <span class="ac-lv ${p.difficulty}">${LEVEL[p.difficulty]}</span>
@@ -180,7 +219,7 @@
     if (same) { cm && cm.refresh(); return; }
 
     $('#ac-desc').innerHTML = `<div class="ac-meta"><span>函数 <code>${esc(p.entry)}()</code></span>`
-      + (p.topics || []).map((t) => `<i>${esc(t)}</i>`).join('') + '</div>' + md(p.statement.zh)
+      + (p.topics || []).map((t) => `<i>${esc(t)}</i>`).join('') + companyChips(p, false) + '</div>' + md(p.statement.zh)
       + `<p class="ac-rules">只能用 numpy 和 Python 标准库；数值在 rtol 1e-5 / atol 1e-6 内算对。</p>`;
     S.hints[p.id] = S.hints[p.id] || 0;
     renderHints();
@@ -443,7 +482,9 @@
   window.addEventListener('hashchange', saveNow);
   const chrome = document.querySelector('.chrome');
   const fit = () => document.documentElement.style.setProperty('--chrome-h', chrome.offsetHeight + 'px');
-  window.addEventListener('resize', fit);
+  // The header changes height after load (status pill text, wrapping tabs on phones), so follow it.
+  if (window.ResizeObserver) new ResizeObserver(fit).observe(chrome);
+  else window.addEventListener('resize', fit);
   fit();
 
   const m = location.hash.match(/^#allclose(?:\/(.+))?$/);

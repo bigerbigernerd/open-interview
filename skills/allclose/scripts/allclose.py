@@ -348,6 +348,8 @@ def statement(p, lang):
     title = p["title"].get(lang) or p["title"]["zh"]
     head = (f"#{p['no']} {title}  ·  {tr(LEVELS[p['difficulty']], lang)}  ·  {tr(TRACKS[p['track']], lang)}\n"
             f"function: {p['entry']}()   topics: {', '.join(p.get('topics') or [])}\n")
+    for c in p.get("companies") or []:
+        head += f"{'面经考过' if lang != 'en' else 'asked at'}: {c['name'] if lang != 'en' else c['en']}  {c['source']}\n"
     return head + "\n" + (p["statement"].get(lang) or p["statement"]["zh"]).strip() + "\n"
 
 

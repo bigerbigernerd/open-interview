@@ -389,6 +389,15 @@ body.ac-mode main { max-width: none; padding: 0; }
 .ac-num { font: 12px var(--mono); color: var(--faint); }
 .ac-t { min-width: 0; }
 .ac-t b { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-trow { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ac-trow b { min-width: 0; }
+.ac-co {
+  flex: none; display: inline-flex; align-items: center; gap: 3px; padding: 0 8px; border-radius: 999px;
+  font: 11.5px/1.7 var(--sans); white-space: nowrap; text-decoration: none; cursor: pointer;
+  color: var(--warm); border: 1px solid rgba(251, 191, 36, .35); background: rgba(251, 191, 36, .08);
+}
+.ac-co i { font-style: normal; font-size: 10px; opacity: .8; }
+.ac-co:hover, .ac-co:focus-visible { background: rgba(251, 191, 36, .18); border-color: var(--warm); outline: none; }
 .ac-t small { display: block; color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ac-topics { display: flex; gap: 6px; }
 .ac-topics i, .ac-meta i { font: normal 11px var(--mono); color: var(--mute); border: 1px solid var(--line-2); border-radius: 4px; padding: 1px 6px; white-space: nowrap; }
