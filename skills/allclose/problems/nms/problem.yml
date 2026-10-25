@@ -7,6 +7,9 @@ difficulty: medium
 track: ml
 topics: [detection, iou, nms, computer-vision]
 roles: [algorithm]
+companies:
+  - company: 58-com
+    source: https://github.com/harleyszhang/cv_note/blob/80820e4ca40a6d957825816dea6f94669c71a99c/interview_summary/4-%E8%AE%A1%E7%AE%97%E6%9C%BA%E8%A7%86%E8%A7%89%E5%B2%972020%E5%B1%8A%E7%A7%8B%E6%8B%9B%E9%9D%A2%E7%BB%8F.md
 entry: nms
 time_limit: 2
 statement:
