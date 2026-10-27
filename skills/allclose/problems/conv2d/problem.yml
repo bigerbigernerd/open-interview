@@ -16,7 +16,7 @@ statement:
     - `x`：`(N, C, H, W)`；`w`：`(F, C, KH, KW)`；`b`：`(F,)` 或 `None`。
     - 做的是**互相关**（不翻转卷积核），四周各补 `padding` 圈 0，步长 `stride`（高和宽相同）。
     - 输出 `(N, F, H_out, W_out)`，`H_out = (H + 2·padding - KH) // stride + 1`，W 同理。
-    - 有一个 `(4, 8, 32, 32)` 输入、16 个 3×3 卷积核的用例，限时 2 秒，七重 Python 循环会超时，试试 im2col 或者 `np.einsum`。
+    - 有一个 `(4, 16, 32, 32)` 输入、32 个 3×3 卷积核的用例，限时 2 秒，七重 Python 循环会超时，试试 im2col 或者 `np.einsum`。
   en: |
     Implement 2-D convolution like PyTorch's `F.conv2d`: `conv2d(x, w, b=None, stride=1, padding=0)`.
 
@@ -24,7 +24,7 @@ statement:
     - It is a **cross-correlation** (the kernel is not flipped), with `padding` rings of zeros on every side and
       the same `stride` for height and width.
     - Output `(N, F, H_out, W_out)` with `H_out = (H + 2·padding - KH) // stride + 1`, likewise for W.
-    - One case has a `(4, 8, 32, 32)` input with sixteen 3×3 kernels and a 2 s limit, so seven nested Python
+    - One case has a `(4, 16, 32, 32)` input with thirty-two 3×3 kernels and a 2 s limit, so seven nested Python
       loops will time out; try im2col or `np.einsum`.
 hints:
   zh:

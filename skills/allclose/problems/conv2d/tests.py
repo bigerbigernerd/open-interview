@@ -11,5 +11,5 @@ def cases():
         dict(name="asymmetric kernel 1x3", kwargs=dict(x=r(1, 2, 5, 6), w=r(3, 2, 1, 3), b=r(3))),
         dict(name="stride 2, padding 2, kernel 5", kwargs=dict(x=r(2, 2, 9, 8), w=r(2, 2, 5, 5), stride=2, padding=2)),
         dict(name="kernel = input size", kwargs=dict(x=r(3, 4, 3, 3), w=r(5, 4, 3, 3), b=r(5))),
-        dict(name="(4, 8, 32, 32) x 16 filters within 2 s", kwargs=dict(x=r(4, 8, 32, 32), w=r(16, 8, 3, 3), b=r(16), padding=1)),
+        dict(name="(4, 16, 32, 32) x 32 filters within 2 s", kwargs=dict(x=r(4, 16, 32, 32), w=r(32, 16, 3, 3), b=r(32), padding=1)),
     ]
