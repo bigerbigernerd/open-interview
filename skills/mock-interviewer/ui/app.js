@@ -349,15 +349,17 @@
   function route() {
     const want = location.hash.replace('#', '') || (isLocal ? 'agent' : 'practice');
     const [head, sub] = want.split('/');
-    view = head === 'practice' || head === 'allclose' ? head : 'agent';
+    view = ['practice', 'allclose', 'cards'].includes(head) ? head : 'agent';
     $('#view-agent').hidden = view !== 'agent';
     $('#view-practice').hidden = view !== 'practice';
     $('#view-allclose').hidden = view !== 'allclose';
+    $('#view-cards').hidden = view !== 'cards';
     document.body.classList.toggle('ac-mode', view === 'allclose');
     document.querySelectorAll('.tabs a').forEach((a) => a.setAttribute('aria-selected', String(a.dataset.tab === view)));
     if (listener.on) listener.detach();
     if (view === 'practice') loadBank();
     if (view === 'allclose' && window.Allclose) window.Allclose.show(sub ? decodeURIComponent(sub) : '');
+    if (view === 'cards' && window.Cards) window.Cards.show(sub || '');
     updateStatus();
   }
   window.addEventListener('hashchange', route);
@@ -376,6 +378,10 @@
     if (view === 'practice' && bank) {
       pill.textContent = `题库 ${bank.counts.questions} 题`;
       pill.className = 'pill on';
+    } else if (view === 'cards') {
+      const remote = window.Cards && window.Cards.remote;
+      pill.textContent = remote ? '记录存本机' : '记录存浏览器';
+      pill.className = 'pill' + (remote ? ' on' : '');
     } else if (view === 'allclose') {
       const local = window.Allclose && window.Allclose.local;
       pill.textContent = local ? '本地评测' : '在线预览';
@@ -1006,7 +1012,7 @@
 
   // ---------------- keyboard ----------------
   document.addEventListener('keydown', (e) => {
-    if (view === 'allclose') return; // allclose.js owns its own shortcuts
+    if (view === 'allclose' || view === 'cards') return; // allclose.js and cards.js own their shortcuts
     const el = document.activeElement;
     const typing = el && /TEXTAREA|INPUT|SELECT/.test(el.tagName);
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -1028,8 +1034,9 @@
   });
 
   if (!synth) for (const id of ['#btn-repeat', '#p-speak', '#s-test']) $(id).title = '这个浏览器不支持朗读';
-  // Shared with allclose.js (the 手撕 page), which loads after this file.
-  window.OI = { md, esc, store, HDR, isLocal, speak, stopSpeaking, updateStatus, studioInfo: () => studio, studioPick: () => pick };
+  // Shared with allclose.js (the 手撕 page) and cards.js (记忆卡), which load after this file.
+  window.OI = { md, esc, store, HDR, isLocal, speak, stopSpeaking, updateStatus, bank: ensureBank,
+    studioInfo: () => studio, studioPick: () => pick };
   route();
   initStudio().finally(poll);
 })();

@@ -1,0 +1,686 @@
+# yaml-language-server: $schema=../../../schema/questions.schema.json
+source:
+  name: open-interview · Agent 面试卡组
+  license: CC-BY-SA-4.0
+
+defaults:
+  lang: zh
+  type: technical
+  roles: [ai-agent]
+  topics: [agent]
+
+questions:
+  # ---------- 概念与定义 ----------
+  - id: agent-basic-what-is-agent
+    q: 什么是 AI Agent？它和普通 Chatbot、单次 LLM 调用的本质区别是什么？
+    topics: [agent]
+    difficulty: 1
+    hot: true
+    answer_brief: >-
+      Agent 是让 LLM 在循环里自主决定下一步做什么的系统：观察环境、选择并调用工具、根据结果决定继续还是结束，直到完成目标。
+      和 Chatbot 的本质区别是控制流由模型决定，并且能对外部环境产生动作、拿到真实反馈形成闭环，而不只是一问一答地生成文本。
+    key_points:
+      - 判据：LLM 的输出是否决定程序走向（调哪个工具、要不要继续）
+      - 三个特征：目标驱动、多步循环、与工具/环境交互拿到反馈
+      - Chatbot 只做文本生成，没有行动和闭环
+      - 代价：延迟、成本、不确定性和错误累积都更高
+      - 自主性是连续谱：路由 → 工具调用 → 多步 Agent → 多 Agent
+    followups:
+      - 一个带 RAG 的问答机器人算不算 Agent？
+      - 你做过的系统里，哪一步是模型在做决策？
+
+  - id: agent-basic-components
+    q: 常说「Agent = LLM + 规划 + 记忆 + 工具」，这几部分各自负责什么？这个公式漏掉了什么？
+    topics: [agent, agent-planning]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      LLM 是决策核心，负责理解、推理和选择动作；规划把目标拆成子任务并在失败时调整；记忆分短期（当前上下文）和长期（外部存储、跨会话检索）；工具让 Agent 读写外部世界。
+      这个公式常引自 Lilian Weng 2023 年的综述，它容易漏掉环境反馈（工具结果、报错、测试结果怎样回到模型）和驱动循环的运行时（终止、权限、状态管理）。
+    key_points:
+      - LLM：每一步决定想什么、调什么工具、何时结束
+      - 规划：子目标分解 + 反思纠错（ReAct、Plan-and-Execute、Reflexion）
+      - 记忆：短期 = 上下文窗口；长期 = 向量库/文件/数据库，按需检索
+      - 工具：搜索、代码执行、业务 API、浏览器，扩展知识和行动能力
+      - 环境反馈：观察结果的质量决定 Agent 能否自我纠错
+      - 运行时（harness）：循环控制、终止条件、权限、状态持久化
+    followups:
+      - 规划能力是模型自带的，还是要靠外部框架实现？
+      - 如果只能先强化其中一块，你会选哪个？
+
+  - id: agent-basic-agent-vs-workflow
+    q: Agent 和 Workflow 的核心区别是什么？哪些场景不应该用 Agent？
+    topics: [agent, agent-planning]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      Workflow 由开发者用代码预先定好执行路径，LLM 只在节点里完成具体子任务；Agent 由 LLM 动态决定步骤和工具调用，步数事先不确定。
+      路径能提前枚举、要求稳定可审计、对延迟和成本敏感、或出错代价高的场景应优先用 Workflow；只有任务开放、步骤无法预知且有可靠反馈信号时才值得上 Agent。
+    key_points:
+      - Workflow 可预测、好测试、成本可控；Agent 灵活但不稳定、更贵
+      - 错误累积：单步 95% 成功率，串 20 步只剩约 36%
+      - 不适合 Agent：固定审批流、强合规流程、强实时、单次调用能解决的任务
+      - 常见混合：主干用 Workflow，个别开放节点交给 Agent
+      - 权限、数值计算、状态流转写进代码，语义判断才交给模型
+    followups:
+      - 你项目里哪部分是 Workflow，哪部分让模型自主决定？为什么？
+      - 出现什么信号说明该把 Workflow 升级成 Agent？
+
+  - id: agent-basic-workflow-patterns
+    q: Anthropic 总结的几种 Workflow 模式（Prompt Chaining、Routing、Parallelization、Orchestrator-Workers、Evaluator-Optimizer）分别适合什么场景？
+    topics: [agent, agent-planning]
+    difficulty: 3
+    answer_brief: >-
+      Prompt Chaining 把任务拆成固定顺序的多次调用，用延迟换准确率；Routing 先分类再分派到专门的处理链；Parallelization 分为拆子任务并行（sectioning）和同一任务多次投票（voting）；
+      Orchestrator-Workers 由中心 LLM 动态拆任务派给 worker，适合子任务无法预知的情况；Evaluator-Optimizer 一个生成、一个评审循环迭代，适合评价标准明确的任务。
+    key_points:
+      - Chaining：步骤间可加程序化检查（gate），如先写大纲、校验后再成文
+      - Routing：客服按意图分流，简单问题走小模型省钱
+      - Parallelization：多维度审查并行跑；同一段代码多次投票查漏洞
+      - Orchestrator-Workers：多文件代码修改，改哪些文件由模型临时决定
+      - Evaluator-Optimizer：翻译润色、多轮检索，前提是评价标准清晰
+      - 它们都是预定义代码路径；步数无法预知时才需要真正的 Agent
+    followups:
+      - Orchestrator-Workers 和 Parallelization 的区别是什么？
+      - 这几种模式在 LangGraph 里分别怎么表达？
+
+  - id: agent-basic-autonomy-levels
+    q: Agent 的自主程度可以怎么分级？你会怎么决定给一个 Agent 多大的自主权？
+    topics: [agent]
+    difficulty: 2
+    answer_brief: >-
+      一种划分看 LLM 输出控制了多少程序流程：只处理文本 → 决定 if/else 路由 → 选择并执行工具 → 控制循环是否继续的多步 Agent → 能启动其他 Agent 或自己写代码定义动作。
+      另一种从人的角色看：人从操作者、协作者、顾问、审批者逐步退到旁观者。自主权应按操作风险、可逆性和自动验证能力逐步放开。
+    key_points:
+      - smolagents 分级：simple processor → router → tool call → multi-step → multi-agent
+      - Feng 等 2025 按人的角色分五级：operator 到 observer，人逐级退出
+      - 决定因素：操作能否撤销、出错代价、有没有自动验收信号
+      - 高风险写操作保留人工审批；只读和沙箱内操作可以放开
+      - 自主权做成可配置项，随评测数据逐步提高
+    followups:
+      - 一个能自动退款的客服 Agent，你会放在哪一级？
+      - 怎么用数据证明可以放宽 Agent 的自主权？
+
+  # ---------- 单 Agent 设计原则 ----------
+  - id: agent-basic-agent-loop-impl
+    q: 不用任何框架，手写一个最小的 Agent loop，需要处理哪些关键分支？
+    type: coding
+    topics: [agent, tool-use]
+    difficulty: 2
+    answer_brief: >-
+      核心是一个 while 循环：把 system prompt、消息历史和工具定义发给模型；如果响应里有工具调用，就逐个执行，把结果按 tool call id 作为工具消息追加回历史，再进入下一轮；
+      如果没有工具调用、正常结束，就把文本作为最终答案返回。外面再包上最大步数、超时、异常处理和日志。
+    key_points:
+      - 结束判断：stop_reason 为 tool_use 继续、end_turn 结束；OpenAI 对应 tool_calls / stop
+      - 工具结果要带对应的 tool_call_id 回填，一轮多个调用必须全部回填
+      - 工具抛异常不要中断循环，把错误信息作为 observation 交给模型
+      - 未知工具名、参数 JSON 解析失败也要转成可读的错误反馈
+      - 护栏：max_steps、token/费用预算、整体超时、重复调用检测
+      - 每步记录 trace（上下文、工具、参数、结果、耗时）便于回放
+    followups:
+      - 模型一轮返回多个工具调用，你串行还是并行执行？
+      - 要支持流式输出和中途取消，loop 要怎么改？
+
+  - id: agent-basic-simplicity-first
+    q: 构建 Agent 时为什么强调「从最简单的方案开始」？你会按什么顺序增加复杂度？
+    topics: [agent]
+    difficulty: 2
+    answer_brief: >-
+      每多一层自主性就多一份延迟、成本和不可预测性，而很多任务一次 LLM 调用加检索和示例、或一条固定链就能解决。
+      合理顺序是：优化单次调用 → 固定 Workflow → 单 Agent 加工具 → 多 Agent，每次升级前都要用评测证明上一层确实不够用。
+    key_points:
+      - 先建评测集，没有基线就无法判断加复杂度是否有收益
+      - 框架抽象会藏住真实的 prompt 和响应，先直接调 API 理解底层
+      - 单 Agent + 设计好的工具，通常比多 Agent 更稳、更省 token
+      - 透明：让 Agent 显式输出计划，方便调试和建立用户信任
+      - 保留简单路径作为 fallback，复杂方案出问题时能退回
+    followups:
+      - 你有没有把多 Agent 系统简化回单 Agent 的经历？
+      - 什么指标告诉你单 Agent 已经不够用了？
+
+  - id: agent-basic-aci-tool-design
+    q: 什么是 ACI（Agent-Computer Interface）？为什么说给 Agent 设计工具要像给新同事写文档？
+    topics: [agent, tool-use]
+    difficulty: 2
+    answer_brief: >-
+      ACI 指 Agent 与工具、环境交互的接口，类比人机交互里的 HCI。模型只能通过工具名、描述、参数 schema 和返回内容理解工具，所以描述要写清用途、边界、参数格式、示例以及和相似工具的区别，
+      并用防呆设计让错误难以发生。Anthropic 在做 SWE-bench Agent 时，花在优化工具上的时间比优化整体 prompt 还多。
+    key_points:
+      - 工具定义值得投入和 system prompt 同等的 prompt engineering
+      - 防呆（poka-yoke）：要求绝对路径，避免切换目录后相对路径出错
+      - 选模型容易写对的格式：少转义、不需要精确数行号
+      - 工具粒度贴合任务，而不是一对一包装底层 API
+      - 用大量真实样例观察模型怎么误用工具，再迭代描述和参数
+    followups:
+      - 工具太多导致模型经常选错，怎么办？
+      - 工具返回内容太长怎么处理？
+
+  - id: agent-basic-environment-feedback
+    q: Agent 每一步看到的环境反馈（工具结果、报错信息）应该怎么设计，才能帮它自我纠错？
+    topics: [agent, tool-use]
+    difficulty: 3
+    answer_brief: >-
+      反馈要让模型能据此决定下一步：成功时返回精简、语义化的关键信息，失败时给出明确原因和可行的修正方向，而不是堆栈或空结果。
+      长输出要截断或分页，并告诉模型怎么拿更多；失败记录一般应留在上下文里，让模型看到错误避免重犯，而不是悄悄删掉重试。
+    key_points:
+      - 可操作的报错：「date 需为 YYYY-MM-DD，收到 10/27」优于 400 Bad Request
+      - 返回人能读懂的名称而不是一长串内部 ID，可提供简洁/详细两种模式
+      - 大结果截断，并提示可用的过滤、分页参数，控制 token
+      - 最有价值的是外部可验证信号：测试结果、编译错误、真实执行输出
+      - 保留失败轨迹有助于纠错，但对重复报错要压缩
+    followups:
+      - 工具返回了一个 5 万 token 的网页全文，你怎么处理？
+      - 什么错误应该直接终止任务，而不是交给模型重试？
+
+  # ---------- 推理与提示技术 ----------
+  - id: agent-basic-cot
+    q: CoT（Chain-of-Thought）是什么？为什么让模型「先想再答」能提升推理效果？
+    topics: [agent-planning, prompt-engineering]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      CoT 让模型在给出答案前先生成中间推理步骤：可以 few-shot 示范带推理过程的样例（Wei 等 2022），也可以零样本加一句「Let's think step by step」（Kojima 等 2022）。
+      直观解释是自回归模型每个 token 的计算量固定，写出中间步骤等于给难题更多计算，并把多步问题拆成每步都更容易预测的小步。
+    key_points:
+      - 收益集中在数学、逻辑、多跳问答等多步推理任务
+      - 原论文发现收益随规模出现，约 100B 参数量级才明显，小模型可能变差
+      - 写出来的推理链不一定忠实反映模型真实的计算过程
+      - 代价是输出 token 和延迟增加，简单任务上可能没有收益
+      - 推理模型已内化长 CoT，再要求「逐步思考」通常没必要
+    followups:
+      - CoT 和 Self-Consistency 怎么配合使用？
+      - 要求结构化输出时怎么保留 CoT？
+
+  - id: agent-basic-self-consistency
+    q: Self-Consistency 是怎么做的？适合什么任务，代价是什么？
+    topics: [agent-planning, prompt-engineering]
+    difficulty: 2
+    answer_brief: >-
+      Self-Consistency（Wang 等 2022）对同一问题以较高温度采样多条 CoT 推理路径，再对最终答案做多数投票。依据是复杂问题往往有多条推理路径通向同一个正确答案，而错误答案比较分散。
+      它适合答案可以精确比对的任务，代价是成本和延迟随采样数近似线性增长。
+    key_points:
+      - 需要 temperature > 0 才有多样性，greedy 解码只有一条路径
+      - 适合数学、选择题、分类等答案离散、能判等的任务
+      - 开放式生成没法直接投票，可让 LLM 选最一致的答案或用 reranker
+      - 采样数越多收益越递减，需要按预算权衡
+      - 一致率可作为置信度：分歧大时转人工或换更强模型
+    followups:
+      - 开放式问答怎么做类似 Self-Consistency 的投票？
+      - 它和 Best-of-N 加奖励模型有什么区别？
+
+  - id: agent-basic-tot
+    q: Tree of Thoughts（ToT）和 CoT 有什么区别？它由哪些部分组成，为什么生产里很少直接用？
+    topics: [agent-planning]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      CoT 是一条从左到右的推理链，一步走错无法回头；ToT（Yao 等 2023）把推理组织成树，每个节点是一个中间「思考」，由模型生成多个候选、再由模型给状态打分或投票，配合 BFS/DFS 搜索和回溯。
+      论文中 GPT-4 在 24 点游戏上用 CoT 只解出 4%，ToT 达到 74%。但它需要大量模型调用，成本和延迟高，生产中多用于离线或高价值任务。
+    key_points:
+      - 四个设计点：思考步骤怎么切分、候选生成、状态评估、搜索算法
+      - 候选生成：独立采样多次（sample）或一次提出多个（propose）
+      - 状态评估：模型给每个状态打分/定级，或在候选之间投票
+      - 搜索：BFS 每层保留前 b 个；DFS 配合剪枝和回溯
+      - 推理模型在内部学会了回溯和自检，显式 ToT 的需求下降
+    followups:
+      - Graph of Thoughts 比 ToT 多了什么？
+      - 状态评估不准时，ToT 会出什么问题？
+
+  - id: agent-basic-search-lats
+    q: 除了 ToT，还有哪些把搜索引入推理和 Agent 决策的方法，比如 GoT、LATS？它们的代价是什么？
+    topics: [agent-planning]
+    difficulty: 4
+    answer_brief: >-
+      GoT（Graph of Thoughts）把思考组织成图，允许多个思考聚合、合并和循环细化，适合排序、集合运算这类先拆分再合并的任务。
+      LATS 把蒙特卡洛树搜索用到 Agent 上：节点是 ReAct 式的状态，用 LLM 估值和环境反馈选择扩展方向，失败轨迹生成反思供后续搜索参考。两者都用更多模型调用换质量，并要求环境可回退或可重放。
+    key_points:
+      - GoT 比树多了聚合操作，可把多个子结果合成一个
+      - LATS = MCTS（选择、扩展、评估、回传）+ ReAct + 自我反思
+      - 前提：环境可回滚（网页可后退、代码可重跑），真实写操作不行
+      - 调用次数可达单条 ReAct 轨迹的数倍到数十倍
+      - 工程中更常见的轻量版：采样多条轨迹，用验证器选最优
+    followups:
+      - 如果环境不可回退（比如邮件已发出），搜索类方法还能怎么用？
+      - 怎么给 Agent 的中间状态设计价值评估？
+
+  - id: agent-basic-react
+    q: ReAct 是什么？一轮循环包含哪几步？现在一般怎么实现？
+    topics: [agent, agent-planning]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      ReAct（Yao 等 2022）让模型交替生成推理和动作：Thought 分析当前状态、决定下一步，Action 调用工具，Observation 把工具结果写回上下文，循环直到给出最终答案。推理帮助制定和调整计划，动作带回外部事实纠正推理。
+      早期靠 prompt 规定文本格式、再用正则解析 Action 行，现在多用模型原生的 function calling。
+    key_points:
+      - 原论文在 HotpotQA、FEVER、ALFWorld、WebShop 上验证
+      - Observation 由环境产生，不能让模型自己续写编造
+      - 终止：输出最终答案，或达到最大步数 / 预算
+      - 优点：可解释、能根据反馈调整；缺点：串行慢、上下文越滚越长
+      - 文本解析易出格式错误，原生工具调用更稳定
+    followups:
+      - ReAct 循环中上下文越来越长怎么办？
+      - 怎么防止 ReAct 反复调用同一个工具？
+
+  - id: agent-basic-react-vs-cot-act
+    q: ReAct 相比纯 CoT（只推理）和纯 Act（只调工具）分别好在哪里？各自的典型失败是什么？
+    topics: [agent-planning]
+    difficulty: 3
+    answer_brief: >-
+      纯 CoT 只靠模型内部知识，事实错误无法被外部信息纠正，ReAct 论文的人工分析里幻觉是 CoT 最主要的失败原因；纯 Act 不显式推理，难以拆解目标、跟踪进度，多步任务中容易迷失。
+      ReAct 让推理决定查什么、怎么用结果，动作带回事实，更可信；但它也会因检索结果没有信息量而被带偏，或反复生成相同的思考和动作陷入循环。
+    key_points:
+      - 论文结果：FEVER 上 ReAct 优于 CoT，HotpotQA 上单用略低于 CoT
+      - ReAct 失败约 1/4 来自无信息量的检索结果，之后很难恢复
+      - 最佳方案是 ReAct 与 CoT-SC 互相回退（步数用完或投票不一致时切换）
+      - 在 ALFWorld、WebShop 等交互任务上 ReAct 明显优于纯 Act
+      - 工程启示：工具结果的质量决定 ReAct 的上限
+    followups:
+      - 你会怎么判断什么时候该从 ReAct 回退到纯推理？
+
+  # ---------- 规划架构 ----------
+  - id: agent-basic-plan-and-execute
+    q: Plan-and-Execute 架构是怎么工作的？什么时候触发重新规划？
+    topics: [agent, agent-planning]
+    difficulty: 2
+    answer_brief: >-
+      先由 planner 一次性生成完整的多步计划，再由 executor 逐步执行（每步可以是一次工具调用或一个小 ReAct Agent），每步结束后 replanner 根据结果决定继续、修改剩余计划还是直接给出答案。
+      思路来自 Plan-and-Solve 提示和 BabyAGI 一类项目，好处是有全局视角，规划可用强模型、执行用便宜模型。
+    key_points:
+      - 三个角色：Planner、Executor、Replanner（可与 Planner 是同一模型）
+      - 计划是显式的数据结构，便于展示、人工审批和断点恢复
+      - replan 触发：步骤失败、结果不符合预期、出现新信息、计划执行完
+      - 风险：初始计划基于不完整信息，过于死板
+      - 每步都 replan 会退化成 ReAct，失去省调用的优势
+    followups:
+      - 计划执行到一半用户改了需求怎么办？
+      - 怎么评估一个计划的质量？
+
+  - id: agent-basic-react-vs-plan-execute
+    q: ReAct 和 Plan-and-Execute 怎么选？各自适合什么任务？
+    topics: [agent, agent-planning]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      ReAct 边想边做，适合步骤较短、环境不确定、需要根据每次观察随时调整的任务，如交互式检索、调试；Plan-and-Execute 先规划后执行，适合步骤多、子任务相对独立、需要全局视角或人工先审计划的任务，如调研报告、批量数据处理。
+      前者灵活但容易短视和跑偏，后者结构清晰、省大模型调用，但依赖计划质量，需要 replan 兜底。
+    key_points:
+      - ReAct 每步都由大模型决策，成本高、只能串行
+      - Plan-and-Execute 执行阶段可用小模型，独立步骤可以并行
+      - 长任务中 ReAct 易目标漂移，显式计划可以对照检查
+      - 信息需要逐步揭示、环境变化快时，预先计划容易失效
+      - 实践常混合：先出粗计划，每一步内部用 ReAct 执行
+    followups:
+      - 怎么让 ReAct 也具备全局规划能力？
+      - 规划阶段信息不足时，planner 应该怎么做？
+
+  - id: agent-basic-rewoo
+    q: ReWOO 是怎么减少 token 消耗的？它的局限是什么？
+    topics: [agent-planning]
+    difficulty: 3
+    answer_brief: >-
+      ReWOO（Xu 等 2023）把推理和观察解耦：Planner 一次写出带变量占位符的完整计划（如 E1 = 搜索 X，E2 = 基于 E1 回答），Worker 按计划调用工具并把结果代入占位符，Solver 汇总证据给出答案。
+      它避免了 ReAct 每一步都重复输入完整历史，论文报告在 HotpotQA 上约 5 倍 token 效率且准确率略有提升；代价是规划时看不到中间结果，无法根据意外的观察中途调整。
+    key_points:
+      - 三个模块：Planner、Worker、Solver
+      - LLM 调用次数基本固定（规划一次、求解一次），不随步数增长
+      - 占位符依赖构成 DAG，无依赖的步骤可以并行执行
+      - Planner 不看工具输出，论文把规划能力蒸馏到了 7B 的 LLaMA
+      - 适合结构可预知的多跳检索，不适合探索型任务
+    followups:
+      - ReWOO 遇到某个工具返回空结果怎么办？
+      - 它和 LLMCompiler 有什么联系？
+
+  - id: agent-basic-parallel-planning
+    q: 一个任务里有多个相互独立的子任务时，怎么让 Agent 并行执行，而不是一步步串行？
+    topics: [agent-planning, tool-use]
+    difficulty: 3
+    answer_brief: >-
+      一是利用模型原生的并行工具调用：一次响应返回多个 tool call，运行时并发执行后一起回填；二是让规划器显式输出带依赖关系的任务 DAG（如 LLMCompiler），调度器在依赖满足时立即派发，结果到齐后汇总或重规划。
+      前者简单，但只覆盖单轮内的并行；后者能跨多步并行，但依赖规划器正确给出依赖关系。
+    key_points:
+      - LLMCompiler：函数调用规划器 + 任务获取单元 + 执行器，按 DAG 调度
+      - 并行前提：子任务之间无数据依赖、不共享写状态
+      - 结果按 tool_call_id 对齐回填，部分失败要单独标明
+      - 并发受限流和下游配额约束，写操作谨慎并行
+      - 也可以派多个 sub-agent 并行处理独立子任务，各自隔离上下文
+    followups:
+      - 并行工具调用中有一个失败了，其他结果怎么处理？
+
+  - id: agent-basic-reflexion
+    q: Reflexion 的核心思想是什么？它和普通的失败重试有什么区别？
+    topics: [agent, agent-planning]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      Reflexion（Shinn 等 2023）不更新模型权重，而是用语言反馈来「强化」Agent：Actor 执行任务，Evaluator 判断成败（单元测试、环境奖励或 LLM 打分），Self-Reflection 把失败原因和改进方向写成文字反思，存入情节记忆，下次尝试时放进上下文。
+      和盲目重试相比，它把经验显式总结出来，避免在同一处重复犯错。
+    key_points:
+      - 组件：Actor、Evaluator、Self-Reflection，加情节记忆缓冲区
+      - 依赖可靠的外部信号，编程任务用模型自己生成的单元测试
+      - 反思记忆只保留最近少数几条，防止上下文膨胀
+      - 论文报告 HumanEval pass@1 约 91%，当时 GPT-4 为 80%
+      - 局限：评估器不准时会强化错误结论；只适用于可多次尝试的任务
+    followups:
+      - 没有单元测试这样可靠的评估信号时，Reflexion 还有效吗？
+      - 反思内容怎样沉淀成跨任务的长期经验？
+
+  - id: agent-basic-self-correction
+    q: 大模型能可靠地自我纠错吗？在 Agent 里怎么设计反思机制才真正有效？
+    topics: [agent, agent-planning]
+    difficulty: 3
+    answer_brief: >-
+      不借助外部信息时，模型对自身推理的内省式纠错往往无效，甚至会把对的改错，论文 Large Language Models Cannot Self-Correct Reasoning Yet 系统验证了这一点。
+      有效的纠错大多依赖外部反馈：代码执行和测试、工具查证、检索证据、规则校验或独立的评审模型。所以反思机制要绑定可验证的信号，而不是简单让模型「再检查一遍」。
+    key_points:
+      - Self-Refine：同一模型「生成 → 反馈 → 改写」，对文风、可读性类任务有效
+      - CRITIC：借助搜索、代码解释器等工具核实并修正输出
+      - 验证往往比生成容易，可以单独训练或选用 verifier
+      - 纠错要有停止条件：通过验证、没有改进、达到轮数上限
+      - 防止讨好式修改：一被提示「可能有错」就把正确答案改掉
+    followups:
+      - 你项目里用什么作为纠错的外部信号？
+      - 用同一个模型既生成又评审有什么问题？
+
+  - id: agent-basic-task-decomposition
+    q: Agent 面对复杂任务时，有哪些常见的任务分解方法？分解粒度怎么把握？
+    topics: [agent, agent-planning]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      常见方法：用 prompt 让模型先列子问题再依次求解（Least-to-Most、Plan-and-Solve）；由规划器生成结构化计划或任务 DAG 再派发执行（HuggingGPT、Plan-and-Execute）；按领域专家预先写好的 SOP 模板分解；以及层级分解，主 Agent 拆大任务、子 Agent 再拆细。
+      粒度以「一步能被一次工具调用或一个子 Agent 可靠完成，且结果可验证」为准。
+    key_points:
+      - 太粗：单步依然很难，失败后定位不到错在哪
+      - 太细：调用次数和上下文暴涨，步骤间传递信息容易丢
+      - 每个子任务写清输入、输出格式和完成标准
+      - 标出依赖关系，无依赖的子任务可以并行
+      - 流程确定的部分优先用人工 SOP，模型只分解开放部分
+    followups:
+      - 用户一句话里包含多个意图，你怎么拆？
+      - 子任务结果互相矛盾时怎么汇总？
+
+  - id: agent-basic-replanning
+    q: 计划执行到一半发现走不通或出现新信息时，Agent 应该怎么重新规划？怎么避免频繁 replan？
+    topics: [agent-planning]
+    difficulty: 3
+    answer_brief: >-
+      在执行循环里设显式检查点：每步执行后对照这一步的预期结果和完成标准，失败时先做局部修复（重试、换参数、换工具），局部修不好再触发全局 replan，把已完成步骤和失败原因交给规划器，只重排剩余部分。
+      为避免来回抖动，要限定 replan 的触发条件和次数，并保留已完成的结果。
+    key_points:
+      - 分层处理：步骤重试 → 修正子计划 → 全局重规划 → 交给人
+      - replan 的输入：原目标、已完成步骤及结果、失败原因、新约束
+      - 用状态表追踪每步：待办 / 进行中 / 完成 / 失败
+      - replan 超过次数上限就降级或转人工
+      - 已产生副作用的步骤不能盲目重做，要幂等或先查状态
+    followups:
+      - 怎么判断失败是局部问题，还是计划本身就错了？
+
+  # ---------- 推理模型 ----------
+  - id: agent-basic-reasoning-models-impact
+    q: o 系列、DeepSeek-R1 这类推理模型（思考模型）出现后，Agent 的设计有哪些变化？
+    topics: [agent, agent-planning, llm]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      推理模型经强化学习训练，回答前先生成长思维链，能自发分解、验证和回溯，原本靠外部框架实现的一些能力（显式 CoT 提示、ToT 式搜索、部分反思环节）被内化进模型，编排可以更简单，更多开放问题可以直接交给模型。
+      但它们延迟高、费用高，还可能过度思考，所以常见设计是推理模型负责规划和难决策，快模型负责大量简单执行步骤。
+    key_points:
+      - 不再需要「一步步思考」类提示，prompt 重点写目标、约束和完成标准
+      - 思考可以和工具调用交错：每次拿到观察后再推理
+      - R1 论文自述：函数调用、多轮、JSON 输出方面不如 DeepSeek-V3
+      - 推理 token 计费，但通常不可见或只给摘要，需控制推理强度
+      - 评测重心从单步准确率转向长程任务成功率
+    followups:
+      - 推理模型的思考内容要不要展示给用户或写进记忆？
+      - 什么任务用推理模型反而不划算？
+
+  - id: agent-basic-reasoning-model-prompting
+    q: 给推理模型写 prompt，和给普通对话模型写 prompt 有什么不同？
+    topics: [agent-planning, prompt-engineering]
+    difficulty: 2
+    answer_brief: >-
+      推理模型会在内部自行展开推理，所以不要再写「请一步步思考」或规定推理步骤，这通常没帮助甚至降效；指令要简洁直接，重点写清目标、约束、输入边界和成功标准。
+      示例先从 zero-shot 开始，确有需要才加少量且与指令严格一致的示例，DeepSeek-R1 论文就报告 few-shot 会稳定地降低其表现。
+    key_points:
+      - 用 Markdown 标题或 XML 标签分隔指令、上下文和输入
+      - 写明约束（预算、时限、禁止事项）和「做到什么程度算完成」
+      - 通过 reasoning effort 或思考预算调深浅，而不是在 prompt 里要求多想
+      - DeepSeek-R1 建议不用 system prompt，指令都放在 user 消息，温度约 0.6
+      - OpenAI 从 o1-2024-12-17 起推理模型用 developer message 承载系统指令
+    followups:
+      - 一套 prompt 从普通模型迁到推理模型，你会先改什么？
+
+  - id: agent-basic-interleaved-thinking
+    q: 什么是 interleaved thinking（在工具调用之间思考）？工具循环里推理模型的思考内容要不要回传？
+    topics: [agent, agent-planning, tool-use]
+    difficulty: 4
+    answer_brief: >-
+      interleaved thinking 指推理模型在同一轮任务中，每拿到一次工具结果都能再思考一次再决定下一步，而不是只在开头想一次就连续调工具，更适合多步 Agent。
+      为让模型延续推理，工具循环里一般要把模型返回的思考块原样回传：Anthropic 的 thinking block 带签名，需原样传回；OpenAI Responses API 靠回传 reasoning item 或 previous_response_id 保留推理状态。
+    key_points:
+      - 漏传或改动思考块，模型会丢失之前的推理，某些配置下请求会被拒绝
+      - 思考 token 按输出计费，回传后还会占用后续的上下文
+      - 开发者拿到的常是摘要或加密内容，而不是完整的原始思维链
+      - 跨用户轮次是否保留历史思考，各厂商、各模型策略不同，要查文档
+      - 自研框架裁剪消息时，不能把思考块和对应的工具调用拆开
+    followups:
+      - 做上下文压缩时，思考块应该怎么处理？
+
+  - id: agent-basic-model-routing
+    q: 一个 Agent 系统里，哪些环节该用推理模型，哪些环节用快速的小模型？
+    topics: [agent, agent-planning, llm]
+    difficulty: 3
+    answer_brief: >-
+      按「这一步需要多少判断力」和「对延迟、成本多敏感」来分：任务规划、复杂决策、歧义处理、最终审核这类低频高价值环节用推理模型；意图分类、信息抽取、格式转换、摘要、简单工具调用这类高频且定义清楚的环节用快模型。
+      常见做法是推理模型当 planner / orchestrator，把具体步骤派给快模型执行。
+    key_points:
+      - 先用最强模型跑通并建立评测基线，再逐步替换为小模型看是否掉点
+      - 路由依据：任务类型、输入复杂度、置信度、用户等级
+      - 级联：小模型低置信或校验失败时升级到大模型
+      - 同一模型也能按步骤调整推理强度，不一定要换模型
+      - 看端到端成本：小模型一步出错引发多轮返工，可能反而更贵
+    followups:
+      - 怎么判断一个请求足够难、需要升级到推理模型？
+
+  # ---------- 终止与失败模式 ----------
+  - id: agent-basic-termination
+    q: Agent 的终止条件应该怎么设计？除了模型自己说「完成了」，还需要哪些兜底？
+    topics: [agent]
+    difficulty: 2
+    answer_brief: >-
+      正常终止是模型判断任务完成：不再发起工具调用直接回复，或调用专门的「提交结果」工具，后者能带结构化结果并在运行时校验。
+      兜底条件包括最大步数、token 和费用预算、墙钟超时、连续失败或重复次数上限，以及缺少权限或信息时主动暂停转人工。触发兜底时要返回已完成的部分和终止原因，而不是静默失败。
+    key_points:
+      - 显式的结束工具比「没有工具调用就结束」更可控，可附带校验
+      - 完成判定最好有外部验证：测试通过、目标状态检查
+      - 框架兜底：LangGraph 有 recursion_limit，OpenAI Agents SDK 有 max_turns
+      - 预算快用完时提示模型收尾，而不是直接截断
+      - 记录终止原因并做监控：完成 / 超步数 / 超时 / 转人工
+    followups:
+      - 达到最大步数时，怎么把已完成的部分交给用户？
+      - 最大步数应该怎么定？
+
+  - id: agent-basic-infinite-loop
+    q: Agent 陷入死循环、反复调用同一个工具时，你怎么检测和处理？
+    topics: [agent]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      检测看重复和进展：同一工具同一参数在最近几步反复出现、观察结果没有新信息、计划或文件等状态多步不变，或在两个动作之间来回切换。
+      处理要分层：先把「相同参数已调用 N 次、结果相同」作为反馈注入，提示换策略；仍无改善就禁用该动作或触发重新规划；最后靠最大步数和预算硬性终止并转人工。
+    key_points:
+      - 对（工具名，规范化后的参数）做哈希计数，滑动窗口检测重复
+      - 进展信号：完成的子任务数、通过的测试数是否在增长
+      - 常见根因：报错信息不清楚、结果被截断、目标模糊、缺少必要工具
+      - 相同调用可直接返回缓存结果并附上重复提示
+      - 修根因优先：从 trace 中找出循环模式，再补工具或改 prompt
+    followups:
+      - 怎么区分合理的轮询等待和死循环？
+      - 说一个你遇到过的死循环案例，根因是什么？
+
+  - id: agent-basic-failure-modes
+    q: Agent 在实际运行中有哪些常见的失败模式？
+    topics: [agent]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      典型有：规划错误（拆解不对、漏步骤）；工具层错误（选错工具、编造工具或参数、误读返回结果）；循环卡死（重复动作、无效重试）；目标漂移（长任务中忘了原始目标或约束）；过早结束（没做完或没验证就宣称完成）；
+      上下文问题（关键信息被截断或被无关内容淹没）；以及被工具返回内容里的指令诱导。根因常在于工具反馈差、目标不清和缺乏验证。
+    key_points:
+      - 错误会累积：一步误读结果，后续步骤全建立在错误之上
+      - 幻觉：编造工具返回、声称执行了实际没执行的操作
+      - 过度行动：做了用户没要求的修改，或超出授权范围
+      - 上下文越长，越容易忽略早期的指令和约束
+      - 排查靠 trajectory：按失败类型打标签、统计分布再针对性修复
+    followups:
+      - 你会怎么给这些失败分类并统计占比？
+      - 哪一类最难只靠改 prompt 修好？
+
+  - id: agent-basic-hallucinated-tool-call
+    q: Agent 出现「幻觉工具调用」，比如调用不存在的工具、编造参数，或声称调用过实际没调，怎么防？
+    topics: [agent, tool-use]
+    difficulty: 3
+    answer_brief: >-
+      分三层防。生成层：用原生 function calling 配严格 schema，必要时开启约束解码，工具名和参数由运行时校验；执行层：未知工具或非法参数一律不执行，返回明确错误和可用工具列表让模型改正；
+      结果层：最终回答中的关键事实必须能在实际工具结果里找到依据，「做没做过」以运行时的执行日志为准，而不是模型的陈述。
+    key_points:
+      - 工具描述写清参数含义和格式，可枚举的值用 enum 限定
+      - 参数溯源：订单号、金额等必须出现在用户输入或之前的工具结果中
+      - 以执行日志判断操作是否发生，不信模型自述
+      - 工具太多易混淆：按任务动态裁剪模型可见的工具集
+      - 高风险调用加二次确认，防止编造的参数直接生效
+    followups:
+      - 模型编造了一个看起来合理的订单号，你怎么拦截？
+
+  - id: agent-basic-goal-drift
+    q: 长任务执行过程中，Agent 逐渐偏离最初目标或忘掉约束（目标漂移），怎么缓解？
+    topics: [agent, agent-planning]
+    difficulty: 3
+    answer_brief: >-
+      根因是原始指令被大量工具输出挤到上下文中段，模型更关注最近内容，加上中间子任务会诱导模型「顺手」做别的事。
+      缓解办法：维护显式的目标和计划（如 todo 列表），每步更新并把它重新写到上下文末尾，让目标始终靠近当前位置；关键约束放进 system prompt；用子 Agent 隔离子任务上下文只回传摘要；在检查点对照原目标验证。
+    key_points:
+      - 复述：反复改写 todo 文件，把目标推回注意力最近处
+      - 压缩上下文时必须保留目标、约束和已完成项
+      - 子任务结束后回到主计划，对照完成标准检查
+      - 用户中途改需求要显式更新目标，而不是只叠加在对话里
+      - 评测中专门构造长程任务，检查约束是否一直被遵守
+    followups:
+      - 上下文压缩会不会加剧目标漂移？怎么避免？
+
+  - id: agent-basic-premature-completion
+    q: Agent 经常没做完就宣布「任务完成」，或跳过验证直接交付，怎么解决？
+    topics: [agent]
+    difficulty: 3
+    answer_brief: >-
+      本质是把「是否完成」交给了模型的主观判断。解决思路是把完成变成可检查的条件：任务开始时生成明确的验收清单（功能列表、测试用例），每项要有证据才能勾掉；
+      结束前强制走验证步骤（跑测试、检查目标状态、用独立评审核对清单），不满足就把未完成项反馈回去继续执行。
+    key_points:
+      - 结束工具只在验收清单全部通过时才被运行时接受
+      - 区分「代码写完」和「端到端验证过」，如真实运行或浏览器测试
+      - 跨多个上下文窗口的长任务，用进度文件记录真实状态
+      - 评审用独立上下文，避免被执行过程中的自我叙述带偏
+      - 也要防止无止境打磨：验收通过就结束
+    followups:
+      - 没有自动化测试的任务，怎么定义验收条件？
+
+  - id: agent-basic-debug-trajectory
+    q: 上线后发现 Agent 效果不好，你会怎么排查是哪一环出了问题？
+    topics: [agent, evaluation]
+    difficulty: 3
+    answer_brief: >-
+      先拿到完整的 trajectory（每步的输入上下文、思考、工具调用、参数、返回、耗时），逐条看失败样本，把错误归类：理解或规划错、选错工具、参数错、工具本身返回错误或信息不足、误读结果、没有正确终止。
+      统计各类占比后从最大头下手，针对性改工具描述、反馈格式、prompt 或流程，并把这些样本加入回归评测集。
+    key_points:
+      - 先分清模型问题还是环境问题：用更强模型重放同一步能否通过
+      - 固定温度并 mock 工具，单独复现某一步的决策
+      - 检查模型实际看到的上下文，而不是你以为它看到的
+      - 一次只改一个变量，用评测集对比前后指标
+      - 指标：任务成功率、平均步数、工具错误率、成本、终止原因分布
+    followups:
+      - 一条很长的失败轨迹，怎么定位第一个出错的步骤？
+
+  # ---------- Prompt 工程 ----------
+  - id: agent-basic-system-prompt-structure
+    q: 一个 Agent 的 system prompt 一般包含哪些部分？怎么组织更稳定？
+    topics: [agent, prompt-engineering]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      常见结构：角色和目标（为谁解决什么问题）、工作方式（何时用哪些工具、不确定时怎么做）、约束和边界（禁止事项、权限、需确认的操作）、输出格式，以及少量示例。
+      用 Markdown 标题或 XML 标签分块，规则写成「原因 + 期望行为」而不是一堆大写的 MUST；静态内容放前面、动态信息放后面，便于命中 prompt cache。
+    key_points:
+      - 写清「为什么」，模型能更好地推广到没写到的情况
+      - 指令落到具体行为：何时问用户、何时停止、失败时怎么办
+      - 消除互相矛盾的规则，规则多时给出优先级
+      - 工具的详细用法写进工具描述，不全塞进 system prompt
+      - 过度强调的措辞在新模型上容易导致过度触发
+      - prompt 要做版本管理，并配回归评测
+    followups:
+      - system prompt 越写越长、规则互相冲突时怎么治理？
+      - 时间戳之类的动态信息为什么不要放在 prompt 开头？
+
+  - id: agent-basic-few-shot
+    q: Few-shot 示例为什么有效？在 Agent 里使用 few-shot 要注意什么？
+    topics: [agent, prompt-engineering]
+    difficulty: 2
+    answer_brief: >-
+      Few-shot 通过上下文学习让模型掌握任务格式、标签空间和输入分布；Min 等 2022 发现示例标签对不对影响不大，格式和分布更关键。
+      在 Agent 中示例用来示范工具用法和输出格式，但模型会过度模仿示例的模式，导致行为单一、照搬示例里的参数或步骤，所以示例要多样、覆盖边界情况，并说明只是示意。
+    key_points:
+      - 示例顺序和类别比例会带来偏差，靠后的示例影响更大
+      - 选例：覆盖典型、边界和反例，可按输入相似度动态检索示例
+      - Agent 的历史动作本身就是「示例」，会固化重复模式
+      - 在序列化格式和措辞上加入少量变化，打破模式模仿
+      - 推理模型通常 zero-shot 更好，示例反而可能干扰
+    followups:
+      - 动态 few-shot（按相似度检索示例）怎么实现？
+
+  - id: agent-basic-structured-output
+    q: 怎么让模型稳定输出符合 schema 的 JSON？JSON mode、Structured Outputs 和事后校验有什么区别？
+    topics: [agent, prompt-engineering]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      由弱到强三层：prompt 里给 schema 和示例，只能提高概率；JSON mode 保证输出是合法 JSON，但不保证字段和类型正确；Structured Outputs 或约束解码在生成时按 JSON Schema / 语法屏蔽非法 token，从机制上保证符合 schema（如 OpenAI 的 strict 模式，开源有 Outlines、XGrammar）。
+      无论哪种，业务层仍要用 Pydantic 等做校验，失败时带上错误信息重试或修复。
+    key_points:
+      - 约束解码只保证格式，不保证内容对，语义仍要校验
+      - schema 支持有限制：深嵌套、部分关键字、超大枚举可能不支持
+      - 字段名和描述本身就是提示，命名清晰能提升填写质量
+      - 工具调用本质也是结构化输出，参数同样要校验
+      - 失败处理：带错误重试、修小格式问题、超次数降级
+    followups:
+      - 约束解码会不会影响模型的推理质量？
+      - 流式输出时怎么增量解析 JSON？
+
+  - id: agent-basic-cot-vs-structured
+    q: 既想让模型先推理，又要求输出严格的 JSON，两者冲突时怎么处理？
+    topics: [agent-planning, prompt-engineering]
+    difficulty: 3
+    answer_brief: >-
+      研究（如 Let Me Speak Freely? 一文）发现严格的格式约束会明显降低推理类任务的表现。常见做法：在 schema 里先放 reasoning 字段、后放 answer 字段，利用自回归顺序让推理先于结论生成；
+      或分两阶段，先自由推理，再用一次便宜的调用转成 JSON；用推理模型时推理在 thinking 里完成，最终输出只要结构化结果。
+    key_points:
+      - 字段顺序很重要：answer 在 reasoning 之前等于先下结论再找理由
+      - 分类、抽取等简单任务受格式约束影响较小
+      - 两阶段多一次调用，但推理质量和格式稳定性都更好
+      - reasoning 字段可以不展示给用户，但要限制长度
+    followups:
+      - 你会怎么设计实验确认格式约束是否拉低了效果？
+
+  - id: agent-basic-codeact
+    q: 用代码作为 Agent 的 action（CodeAct）相比 JSON 工具调用有什么优缺点？
+    topics: [agent, tool-use]
+    difficulty: 3
+    answer_brief: >-
+      CodeAct 让模型直接写可执行的 Python 代码作为动作，在沙箱中运行后把输出和报错作为观察返回。代码天然支持循环、条件、变量和多个工具的组合，一步能做完 JSON 需要多轮的事，中间结果可以留在变量里不进上下文；
+      论文在 17 个模型上报告成功率最高比 JSON/文本动作高 20%。代价是必须有安全沙箱，权限控制和审计更难。
+    key_points:
+      - 优势：可组合、能管理对象、通用、代码在训练数据里更常见
+      - traceback 本身就是很好的纠错反馈
+      - 风险是任意代码执行：容器隔离、网络和文件白名单、资源限额
+      - 下单、退款这类单个高风险操作，用结构化工具调用更可控
+      - 代表实现：Hugging Face smolagents 的 CodeAgent
+    followups:
+      - 你会怎么为 CodeAct 搭建安全的执行沙箱？

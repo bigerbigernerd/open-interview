@@ -1,0 +1,743 @@
+# yaml-language-server: $schema=../../../schema/questions.schema.json
+source:
+  name: open-interview · Agent 面试卡组
+  license: CC-BY-SA-4.0
+
+defaults:
+  lang: zh
+  type: technical
+  roles: [ai-agent]
+  topics: [rag]
+
+questions:
+  # ---------- 基础与全链路 ----------
+  - id: agent-rag-why-rag
+    q: 现在 DeepSeek 这类大模型已经很强了，为什么还要做 RAG？它到底解决了什么问题？
+    topics: [rag]
+    companies: [kuaishou]
+    url: https://github.com/jx888-max/Interview-experience/tree/072303f/%E6%97%A5%E5%B8%B8%E5%AE%9E%E4%B9%A0/%E5%BF%AB%E6%89%8B/20251014-%E6%94%AF%E4%BB%98%E7%AE%97%E6%B3%95%E5%AE%9E%E4%B9%A0%E7%94%9F-%E7%94%B5%E5%95%86
+    difficulty: 1
+    hot: true
+    answer_brief: >-
+      模型再强，参数里的知识也有截止时间，覆盖不到企业私有数据，答错时也无法追溯来源。
+      RAG 在推理时先从外部知识库检索相关片段，再让模型依据这些证据作答，补上「时效、私域、可溯源」三块短板；
+      知识更新只需改库、不用重训，成本远低于微调。
+    key_points:
+      - 知识截止：训练数据有 cutoff，新政策、新价格、新版本模型都不知道
+      - 私有知识：内部文档、工单、代码不在预训练语料里，也不能拿去训练公开模型
+      - 可溯源、降幻觉：答案绑定检索片段，能给出处、便于审计
+      - 更新与治理：增删文档即时生效，还能在检索层按用户做权限过滤
+      - 局限：效果上限受检索质量约束，召回错了模型照样答错
+    followups:
+      - RAG 和传统搜索引擎有什么区别？
+      - 什么场景不适合用 RAG？
+
+  - id: agent-rag-pipeline
+    q: 一个生产级 RAG 系统从文档入库到在线回答，完整链路包含哪些环节？
+    type: system-design
+    topics: [rag]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      分离线索引和在线查询两条链路。离线：采集 → 解析清洗 → 切分 chunk → 补元数据 → embedding → 写入向量索引和倒排索引。
+      在线：query 理解与改写 → 权限过滤下的多路召回（向量 + BM25）→ 融合 → rerank → 组装上下文 → LLM 生成并附引用 → 后校验。
+      外层再配评测、trace 监控和知识更新机制。
+    key_points:
+      - 离线：解析（版面、表格、OCR）、清洗去重、chunking、metadata（来源、页码、权限、版本）
+      - 在线召回：query 改写、metadata 过滤、混合召回、RRF 融合、cross-encoder 精排
+      - 生成：指令 + 编号证据 + 问题，要求只依据证据、标注引用、证据不足就拒答
+      - 运维：增量更新与删除、embedding 版本管理、trace 记录每步召回结果
+      - 评测分两段：检索看 recall@k / MRR，生成看 faithfulness / answer relevance
+    followups:
+      - 这条链路里哪个环节对最终效果影响最大？
+      - 端到端延迟主要花在哪几个环节？
+
+  - id: agent-rag-vs-finetune
+    q: RAG 和微调分别解决什么问题？什么时候用 RAG，什么时候微调，什么时候两者结合？
+    topics: [rag, fine-tuning]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      RAG 解决「知识」问题：注入时效性强、私有、需要出处的事实；微调解决「行为」问题：让模型稳定输出特定格式、风格、领域用语或掌握某种任务技能。
+      知识常变、要可溯源选 RAG；格式和推理模式要稳定、或想把长 prompt 内化省 token 选微调；
+      垂直领域常两者结合，比如微调 embedding / reranker，或训练生成模型更会利用检索证据。
+    key_points:
+      - 微调灌新事实效率低：易幻觉、难更新、难删除，也给不出出处
+      - RAG 更新只改库；微调每次知识变化都要重训加回归评测
+      - 微调擅长：固定输出 schema、风格、领域分类、工具调用习惯、小模型蒸馏
+      - 结合：RAFT 类方法用含干扰文档的上下文训练模型从证据中找答案
+      - 决策顺序一般是 prompt → RAG → 微调，先用便宜手段定位瓶颈
+    followups:
+      - 为什么微调不适合给模型灌新知识？
+      - 既有私有知识、又要求固定输出格式的场景，你怎么设计？
+
+  - id: agent-rag-long-context-vs-rag
+    q: 现在模型上下文窗口已经到百万 token 级别，长上下文会取代 RAG 吗？
+    topics: [rag, context-engineering]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      不会完全取代，两者互补。长上下文适合资料量不大、需要通读全局推理的任务（分析一份合同、一个代码仓）；
+      RAG 适合知识库远超窗口、要求低延迟低成本、需要权限过滤和溯源的场景。
+      常见做法是 RAG 先粗筛、长上下文装下更多更完整的证据，或按问题路由选择两种方式。
+    key_points:
+      - 成本延迟：每次塞满窗口，prefill 计算和计费随输入线性涨，prompt cache 只能缓解静态前缀
+      - 效果：存在 Lost in the Middle 和注意力稀释，有效利用长度常小于标称窗口
+      - 规模：企业知识库常是 GB 到 TB 级，任何窗口都装不下
+      - 治理：RAG 能按用户做权限过滤、版本控制和引用，全塞进窗口很难做到
+      - 混合路由：Self-Route 先给模型检索结果，模型自评答不了再走长上下文，以较低成本逼近长上下文效果
+    followups:
+      - 什么样的任务你会直接选长上下文而不做 RAG？
+      - 长上下文场景下 prompt caching 怎么帮你降成本？
+
+  # ---------- 文档解析与 chunking ----------
+  - id: agent-rag-pdf-parsing
+    q: 复杂 PDF（多栏排版、表格、扫描件、页眉页脚）进 RAG 前怎么解析？难点在哪？
+    topics: [rag]
+    difficulty: 3
+    answer_brief: >-
+      难点在于 PDF 只记录字符的绘制位置，没有段落、标题、表格等逻辑结构，直接抽文本会多栏串行、表格变散乱数字、页眉页脚混入正文。
+      做法是先做版面分析，识别标题、正文、表格、图片、公式区块，按阅读顺序重排；扫描件走 OCR，表格走结构识别；
+      最后输出带层级的 Markdown / JSON，并保留页码、标题路径等元数据。
+    key_points:
+      - 文本型 PDF 直接抽字符和坐标；扫描件必须 OCR，OCR 错字会直接毁掉关键词匹配
+      - 版面分析 + 阅读顺序恢复，解决多栏、侧栏、脚注串行
+      - 表格结构识别还原行列和合并单元格；公式可转 LaTeX
+      - 清洗：去页眉页脚、页码、水印、目录页；拼接跨页段落和跨页表格
+      - 工具：MinerU、Docling、Unstructured 等开源方案，或用 VLM 把整页转成 Markdown
+      - 保留 metadata：文件名、页码、标题路径、bbox，供引用和过滤使用
+    followups:
+      - 解析质量怎么评估？
+      - 用 VLM 直接把整页转成文本有什么风险？
+
+  - id: agent-rag-table-code-image
+    q: 文档里的表格、代码块和图片，分别怎么切分和建索引，才能被正确检索到？
+    topics: [rag, multimodal]
+    difficulty: 3
+    answer_brief: >-
+      原则是把「用来检索的表示」和「返回给模型的原文」分开。表格保持整表或按行组切分并在每块重复表头，同时用 LLM 生成表格摘要作为检索入口；
+      代码按函数、类等语法单元切，附上文件路径和签名；图片用 VLM 描述加 OCR 文本建索引。
+      命中后再通过 ID 取回原表、原代码或原图交给模型。
+    key_points:
+      - 表格：转 Markdown / HTML 保留行列结构，按行切时每块都带表头和表标题
+      - 表格检索：用摘要做 embedding；精确数值、聚合类问题考虑入库成 SQL 表来查
+      - 代码：用 AST / tree-sitter 按函数、类切，不把一个函数劈成两半
+      - 图片：caption + OCR + VLM 描述做索引；图表要抽取数据点或趋势描述
+      - 生成阶段可把原图直接交给多模态模型，避免只看二手描述
+    followups:
+      - 一张上千行的表，用户问某个具体数值，向量检索为什么容易失败？
+      - 代码库检索除了 embedding 还能借助什么信息？
+
+  - id: agent-rag-chunking-strategy
+    q: 常见的 chunking 策略有哪些？为什么不建议只按固定长度切分？
+    topics: [rag]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      常见策略有：固定长度（按 token 加 overlap）、递归切分（按段落 → 句子 → 字符逐级回退）、按文档结构切（标题、章节、Markdown/HTML 标签）、
+      语义切分（相邻句 embedding 相似度骤降处断开），以及按内容类型切（代码按函数、表格整表）。
+      只按固定长度切会把完整语义单元劈开，或把无关内容拼进一块，导致向量语义混杂、召回不准、生成缺上下文。
+    key_points:
+      - 固定长度：简单、长度可控，但无视句子和段落边界
+      - 递归切分：LangChain RecursiveCharacterTextSplitter 的思路，优先在大边界断开
+      - 结构化切分：利用标题层级，chunk 带上标题路径，通常最稳
+      - 语义切分：按相邻句相似度找断点，计算成本高，对阈值敏感
+      - 实践组合：先按结构切，过长再递归切，过短与相邻块合并
+    followups:
+      - 语义切分在什么情况下反而效果不好？
+      - 怎么评估 chunk 切得好不好？
+
+  - id: agent-rag-chunk-size
+    q: chunk 大小和 overlap 怎么定？切得太大和太小分别会出什么问题？
+    topics: [rag]
+    difficulty: 2
+    answer_brief: >-
+      太小：单块信息不完整，指代和上下文丢失，召回到了也答不全。
+      太大：一个向量要概括多个主题，语义被稀释、相似度不准，还挤占上下文窗口、引入噪声。
+      起点通常是几百 token、overlap 10%-20%，最终用自己的评测集对比 recall@k 和答案质量来定，且不能超过 embedding 模型的最大输入长度。
+    key_points:
+      - 事实型短问答偏小块；总结、推理类问题偏大块
+      - overlap 防止关键句被边界切断，但增加存储和重复召回，需要去重
+      - 超过 embedding 最大输入长度会被静默截断，尾部内容检索不到
+      - 检索粒度和返回粒度可以解耦：小块检索、返回父块或相邻窗口
+      - 用同一评测集网格搜索 chunk_size × overlap × top_k
+    followups:
+      - 不同类型的文档能用同一个 chunk size 吗？
+      - overlap 导致同一段内容被重复召回怎么处理？
+
+  - id: agent-rag-parent-child
+    q: 父子文档（small-to-big）检索解决什么问题？在向量库里具体怎么实现？
+    topics: [rag]
+    difficulty: 3
+    answer_brief: >-
+      它解决「小块检索准但上下文不够、大块上下文全但检索不准」的矛盾。把文档切成较大的父块，再把父块切成小的子块；
+      只对子块做 embedding 检索，命中后通过 parent_id 取回父块交给 LLM。匹配精度来自小块，生成上下文来自大块。
+    key_points:
+      - 子块 metadata 存 parent_id，父块存在 KV 或文档库里按 ID 回查
+      - 多个子块命中同一父块时要去重合并，避免重复占用上下文
+      - 变体 sentence window：只索引单句，命中后扩展前后若干句
+      - 变体 multi-vector：为父块生成摘要或假设问题作为检索入口
+      - 代价：上下文 token 变多，父块过大时噪声又回来了
+    followups:
+      - 父块大小怎么定？
+      - 多个子块命中不同父块、总长度超预算时怎么取舍？
+
+  - id: agent-rag-contextual-chunk
+    q: chunk 切出来后脱离了原文上下文（比如只写「该公司营收增长 3%」却不知道是哪家），怎么解决？
+    topics: [rag]
+    difficulty: 3
+    answer_brief: >-
+      思路是在建索引前把上下文补回 chunk。最简单是给每块拼上文档标题和章节路径；
+      进一步是 Anthropic 的 Contextual Retrieval：让 LLM 读全文，为每个 chunk 生成一两句说明其所属文档和指代对象的上下文，前缀到 chunk 上再做 embedding 和 BM25；
+      还有 late chunking：用长上下文 embedding 模型先对整篇编码，再按 chunk 边界对 token 向量做池化。
+    key_points:
+      - 低成本做法：chunk 前拼「文档标题 > 章节标题」，或先做指代消解
+      - 每块由 LLM 生成约 50-100 token 的上下文前缀，embedding 和 BM25 都用补全后的文本
+      - Anthropic 实测 top-20 检索失败率：只上下文化向量侧降 35%，向量和 BM25 都做降 49%，再加 rerank 降 67%
+      - 成本是每个 chunk 一次 LLM 调用，可用 prompt caching 缓存整篇文档
+      - late chunking 的 token 向量编码时已看过全文，适合长上下文 embedding 模型
+    followups:
+      - 文档频繁更新时，上下文前缀怎么维护？
+      - late chunking 和直接用大 chunk 有什么区别？
+
+  # ---------- Embedding ----------
+  - id: agent-rag-embedding-selection
+    q: RAG 里的 embedding 模型怎么选？你会看哪些指标和因素？
+    topics: [rag, vector-search]
+    difficulty: 2
+    answer_brief: >-
+      先看 MTEB / C-MTEB 榜单里检索子任务（主指标 nDCG@10）的成绩筛出候选，但最终以自己领域评测集上的 recall@k 为准。
+      同时权衡语言支持（中文、多语言、跨语言）、最大输入长度、向量维度与存储成本、推理延迟、能否私有化部署和微调，
+      以及是否支持 dense 之外的稀疏或多向量输出。
+    key_points:
+      - 榜单只做初筛，看 Retrieval 子项而不是总平均分，并警惕训练数据泄漏
+      - Matryoshka 训练的模型可截断维度省存储，如 text-embedding-3 的 dimensions 参数
+      - 最大输入长度要覆盖 chunk 长度
+      - 部分模型要求 query 和文档加不同的前缀或指令（如 E5、BGE），用错效果明显下降
+      - 中文常用 BGE 系列；BGE-M3 一个模型同时输出 dense、sparse、multi-vector
+    followups:
+      - 开源 embedding 和商业 API embedding 怎么权衡？
+      - 为什么 query 和文档有时要用不同的指令前缀编码？
+
+  - id: agent-rag-similarity-metrics
+    q: 向量检索里余弦相似度、内积和欧氏距离有什么区别？什么时候三者排序结果等价？
+    topics: [vector-search]
+    difficulty: 2
+    answer_brief: >-
+      余弦只看方向不看长度；内积同时受方向和模长影响；欧氏距离看空间中的绝对距离。
+      向量都做 L2 归一化后，内积等于余弦，且欧氏距离平方 = 2 − 2·cos，三者排序完全一致。
+      所以实践中常先归一化再用内积（计算最快），但具体用哪种要与 embedding 模型训练时的相似度函数保持一致。
+    key_points:
+      - cos(a,b) = a·b / (‖a‖·‖b‖)，取值 [-1, 1]
+      - 单位向量下 ‖a−b‖² = 2 − 2·a·b，最小化 L2 距离等价于最大化内积
+      - 未归一化时内积偏好模长大的向量，推荐系统有时故意用模长表达热度
+      - 建索引时 metric 要选对，如 FAISS 的 IndexFlatIP 与 IndexFlatL2
+      - 相似度阈值依赖具体模型，换模型后阈值要重新校准
+    followups:
+      - 为什么有些 embedding 模型的相似度分数普遍偏高、区分度小？
+      - 相似度阈值能跨模型通用吗？
+
+  - id: agent-rag-embedding-finetune
+    q: 通用 embedding 模型在你的垂直领域召回很差，怎么微调 embedding 或 reranker？训练数据怎么构造？
+    topics: [rag, fine-tuning]
+    difficulty: 4
+    answer_brief: >-
+      用对比学习：构造（query, 正例 chunk, 负例）样本，以 InfoNCE 损失拉近 query 与正例、推远负例。
+      数据来自线上点击 / 采纳日志、人工标注，或用 LLM 根据 chunk 反向生成问题。关键是困难负例：用现有检索系统召回的、看似相关但并非答案的文档做负例，
+      效果远好于随机负例，但要过滤其实也相关的假负例。reranker 同理，用 cross-encoder 做二分类或 listwise 训练。
+    key_points:
+      - 损失用 InfoNCE 加 in-batch negatives，batch 越大负例越多
+      - 难负例挖掘：从 BM25 或现有向量检索的 top-k 中排除正例后采样
+      - 假负例：未标注的相关文档被当负例，可用更强的 reranker 打分过滤
+      - 合成数据：LLM 从 chunk 生成问题，过滤过于简单或照抄原文的问题
+      - 留出集上对比 recall@k / nDCG；可混入通用数据防止遗忘
+      - 微调 embedding 后必须对全库重新编码、重建索引
+    followups:
+      - 只有几百条标注数据怎么办？
+      - 为什么 reranker 微调往往比 embedding 微调更容易见效？
+
+  - id: agent-rag-embedding-upgrade
+    q: 换了新的 embedding 模型后，为什么必须重建索引？线上怎么平滑迁移？
+    topics: [rag, vector-search]
+    difficulty: 3
+    answer_brief: >-
+      不同模型（甚至同一模型的不同版本）的向量空间不同，新模型编码的 query 与旧模型编码的文档算相似度没有意义，维度也可能不同，
+      所以全库文档必须用新模型重新编码。迁移一般走蓝绿：后台建新索引并双写增量，离线评测和小流量对比通过后切流，旧索引保留一段时间用于回滚。
+    key_points:
+      - 新旧向量混用不会报错，只会让检索结果悄悄变差，很隐蔽
+      - 每条向量记录 embedding 模型名和版本，query 端按索引版本选模型
+      - 全量重编码按文档优先级分批离线跑，迁移期新增和修改双写两套索引
+      - 临时方案：学一个线性映射把旧向量对齐到新空间，有精度损失
+      - 相似度阈值、top_k、融合权重都要重新校准
+    followups:
+      - 十亿级向量全量重编码的时间和成本怎么估算？
+      - chunk 策略变更和 embedding 升级，哪个对历史数据的影响更大？
+
+  # ---------- 向量索引 ----------
+  - id: agent-rag-hnsw
+    q: HNSW 索引的原理是什么？M、efConstruction、efSearch 三个参数分别怎么影响效果和性能？
+    topics: [vector-search]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      HNSW 是分层的近邻图，类似跳表：底层包含所有节点，越往上越稀疏（每个节点的最高层按指数衰减的概率随机决定）。
+      查询从顶层入口点开始贪心走向更近的邻居，到局部最优就下降一层，最后在底层用大小为 efSearch 的候选队列做 best-first 搜索得到 top-k。
+      M 决定每个节点的邻居数，efConstruction 是建图时的搜索宽度，efSearch 是查询时的搜索宽度。
+    key_points:
+      - M 大：连通性好、召回高，但内存和建图时间增加；底层邻居上限通常是 2M
+      - efConstruction 大：图质量更高，建索引更慢，不影响查询内存
+      - efSearch 大：召回升、延迟升，必须 ≥ k，是线上最常调的旋钮
+      - 优点：高召回低延迟、支持增量插入；缺点：内存大（向量 + 图），删除多为标记删除
+      - 查询复杂度近似对数级
+    followups:
+      - 大量删除数据后，HNSW 的召回为什么会下降？
+      - 为什么十亿级数据不适合纯内存 HNSW？
+
+  - id: agent-rag-ivf-pq
+    q: IVF 和 PQ 分别是什么原理？IVF-PQ 如何在召回率、内存和速度之间做取舍？
+    topics: [vector-search]
+    difficulty: 4
+    answer_brief: >-
+      IVF 先用 k-means 把向量空间分成 nlist 个簇（倒排列表），查询时只扫描离 query 最近的 nprobe 个簇。
+      PQ 把 D 维向量切成 m 段子向量，每段用 256 个中心的码本量化成 1 字节，一个向量只需 m 字节，距离靠预算好的查找表求和（ADC）。
+      IVF-PQ 用 IVF 缩小范围、PQ 压缩内存，代价是量化误差带来召回下降，通常再用原始向量对候选重排补回精度。
+    key_points:
+      - nprobe 越大召回越高越慢；nlist 常取 √N 的几倍
+      - 近邻落在未被探查的簇里，是 IVF 召回损失的主要来源
+      - 压缩比例子：768 维 float32 占 3072 字节，m=96 时压到 96 字节，约 32 倍
+      - ADC：query 不量化，每段预算到 256 个中心的距离表，查表相加
+      - 需要训练 k-means 和码本，数据分布漂移后要重训
+      - 其他量化：SQ 压到 int8 约 4 倍，二值量化约 32 倍，通常配合重排
+    followups:
+      - 为什么 IVF 类索引对数据分布变化敏感？
+      - HNSW 能和 PQ 结合使用吗？
+
+  - id: agent-rag-index-selection
+    q: Flat、HNSW、IVF-PQ、DiskANN 这些向量索引各适合什么规模和场景？数据从百万涨到十亿时架构怎么调整？
+    topics: [vector-search]
+    difficulty: 3
+    answer_brief: >-
+      十万级以下或要求精确结果用 Flat 暴力搜；百万到千万级、内存充足、要低延迟高召回首选 HNSW；
+      内存紧张的亿级用 IVF-PQ 等量化索引；十亿级还要高召回可用 DiskANN 这类 SSD 图索引。
+      规模继续涨还要做分片、多副本扛 QPS、量化压内存，召回后用原始向量重排。
+    key_points:
+      - Flat：精确、无需训练，每次查询 O(N·D)，也常作评测召回率的基准
+      - HNSW：内存约为原始向量加图结构，亿级纯内存成本很高
+      - IVF-PQ：内存小、可用 GPU 加速，召回上限受量化误差限制
+      - DiskANN：Vamana 图和全精度向量放 SSD，内存只放压缩向量
+      - 分片后各片取 top-k 再全局归并；按租户分片还能顺带隔离
+      - 中小规模用 pgvector / Elasticsearch 足够，规模和 QPS 上来再换 Milvus 一类专用库
+    followups:
+      - 分片后 top-k 怎么合并才能不损失召回？
+      - 如何在不影响线上的情况下评估新索引的召回率？
+
+  - id: agent-rag-metadata-filter
+    q: 用户问「2024 年以后华东区的报销政策」，检索时怎么把时间、地区条件用上？过滤放在向量检索之前还是之后？
+    topics: [rag, vector-search]
+    difficulty: 4
+    answer_brief: >-
+      先用 LLM 做 self-query：把问题拆成语义检索词（报销政策）和结构化过滤条件（年份 ≥ 2024、地区 = 华东），映射到 chunk 的 metadata。
+      执行上，后过滤先取 ANN top-k 再过滤，条件严格时剩下的远少于 k；前过滤先筛出满足条件的子集再搜，选择性高时准但可能慢；
+      主流向量库做检索中过滤，在图遍历或簇扫描时跳过不满足条件的点，并按过滤比例自动切换策略。
+    key_points:
+      - self-query 输出要按 schema 校验字段名和取值，防止 LLM 编出不存在的字段
+      - 后过滤结果不足时加大 ef / k 或迭代扫描，pgvector 0.8 起支持 iterative index scan
+      - 过滤后剩余比例极低时，图的连通性被破坏，直接对子集暴力搜反而更快更准
+      - 总会带上的高基数条件（如租户）适合直接分区或分 collection
+      - metadata 也可参与排序，如按时间新鲜度、文档权威度加权
+    followups:
+      - 「最近」「去年」这类相对时间怎么解析成确定的范围？
+      - 过滤条件抽取错了（比如地区识别错），怎么兜底？
+
+  # ---------- 关键词检索、混合检索与重排 ----------
+  - id: agent-rag-bm25
+    q: BM25 的打分公式由哪几部分组成？k1 和 b 两个参数分别控制什么？相比 TF-IDF 改进了什么？
+    topics: [vector-search, rag]
+    difficulty: 2
+    answer_brief: >-
+      BM25 对 query 中每个词累加「IDF × 饱和后的词频」。IDF 让罕见词权重更高；
+      词频项为 tf·(k1+1) / (tf + k1·(1 − b + b·dl/avgdl))，词出现越多增益越小，并按文档长度归一化，避免长文档只因词多而得分高。
+      相比 TF-IDF，核心改进就是词频饱和和可调的长度归一化。
+    key_points:
+      - k1 控制词频饱和速度，常用 1.2-2.0；k1=0 时只看词是否出现
+      - b 控制长度归一化强度，常用 0.75；b=0 即不做长度归一化
+      - Lucene 的 IDF 为 log(1 + (N − n + 0.5)/(n + 0.5))，保证非负
+      - 中文要先分词，分词质量和自定义词典直接决定效果
+      - 优势：专有名词、编号、代码精确匹配；无需训练、可解释
+    followups:
+      - BM25 在哪些 query 上明显比向量检索好？
+      - 中文分词粒度太粗或太细分别会有什么问题？
+
+  - id: agent-rag-hybrid-search
+    q: 为什么要做 BM25 + 向量的混合检索？两种检索各自擅长什么、会在哪些 query 上失败？
+    topics: [rag, vector-search]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      两者失败模式互补。向量检索擅长语义匹配，能处理同义改写、口语化提问和跨语言，但对专有名词、型号、错误码、人名这类精确词不敏感，
+      容易召回「意思相近但对象不对」的内容；BM25 精确匹配强、可解释，但不懂同义和语义。
+      混合检索两路并行召回再融合，recall 通常高于任一单路，是生产 RAG 的默认配置。
+    key_points:
+      - 向量失败例子：查「错误码 E1023」召回了其他错误码的文档
+      - BM25 失败例子：问「怎么退钱」，文档写的是「退款流程」
+      - 融合方式：RRF 按排名融合，或分数归一化后加权
+      - learned sparse（SPLADE、BGE-M3 sparse）用模型学词权重和扩展，兼顾两者
+      - 代价：两套索引、两次查询，需要并行执行和结果去重
+    followups:
+      - 两路结果怎么融合？
+      - 什么情况下只用向量检索就够了？
+
+  - id: agent-rag-rrf
+    q: 多路召回的结果怎么融合？RRF 的公式是什么，为什么它比直接加权相似度分数更常用？
+    topics: [rag, vector-search]
+    difficulty: 3
+    answer_brief: >-
+      RRF（Reciprocal Rank Fusion）只用排名不用分数：文档的融合分是它在各路结果中 1/(k + rank) 之和，k 常取 60。
+      BM25 分数无上界，向量相似度的分布又因模型而异，直接相加量纲不一致，归一化也不稳定；
+      RRF 只依赖相对排名，几乎无需调参、对异常分值鲁棒，因此成为默认选择。缺点是丢掉了分数里的置信度信息。
+    key_points:
+      - score(d) = Σ_i 1/(k + rank_i(d))，rank 从 1 开始，某路没出现就不加分
+      - k 越大，靠后文档与靠前文档的贡献差距越小，融合越平滑
+      - 加权融合：先 min-max 或 z-score 归一化，再 α·dense + (1−α)·sparse，α 需用评测集调
+      - 有标注数据时可用 learning-to-rank，或把融合后的候选交给 reranker
+      - Elasticsearch、Milvus 等都内置 RRF
+    followups:
+      - 某一路召回质量明显很差时，RRF 会不会拖累整体结果？
+      - 融合之后还需要 rerank 吗？
+
+  - id: agent-rag-rerank
+    q: Rerank 解决什么问题？cross-encoder 和 bi-encoder 有什么区别？为什么不直接用 cross-encoder 对全库排序？
+    topics: [rag, vector-search]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      bi-encoder 把 query 和文档分别编码成向量，文档向量可离线算好，检索快，但两者之间没有交互，精度有限。
+      cross-encoder 把 query 和文档拼在一起送进模型，每层都做 token 级交互，直接输出相关性分数，精度高，但每个候选都要一次前向、无法预计算。
+      所以采用漏斗：BM25 / 向量先从全库召回几十到几百个候选，再用 cross-encoder 精排，取前几个给 LLM。
+    key_points:
+      - 全库 cross-encoder 每次查询要 N 次前向，百万文档完全不可接受
+      - 典型漏斗：召回 top 50-200 → rerank → 取 top 3-10 进上下文
+      - rerank 分数可设阈值，低于阈值直接丢弃，减少噪声和幻觉
+      - 常见模型：bge-reranker、Cohere Rerank；也可用 LLM 做 listwise 重排
+      - 延迟随候选数线性增长，要控制候选数并批量推理
+    followups:
+      - 召回的 top_k 和 rerank 后保留的数量怎么定？
+      - reranker 的分数能当绝对相关性阈值用吗？
+
+  - id: agent-rag-colbert-splade
+    q: 除了单向量 dense 检索和 BM25，ColBERT 这类多向量检索和 SPLADE 这类 learned sparse 检索分别是什么思路？
+    topics: [vector-search, rag]
+    difficulty: 4
+    answer_brief: >-
+      ColBERT 是 late interaction：文档的每个 token 都保留一个向量并离线算好，查询时 query 的每个 token 向量找文档中最相似的 token（MaxSim），
+      再把这些最大相似度相加得分，精度接近 cross-encoder，又能预计算文档侧。
+      SPLADE 用 MLM 头把文本映射成词表维度上的稀疏权重向量，相当于让模型学词权重和词扩展，仍可走倒排索引，兼顾精确匹配和一定语义能力。
+    key_points:
+      - ColBERT 的代价是存储膨胀（每 token 一个向量），ColBERTv2 用残差压缩，PLAID 加速检索
+      - MaxSim 保留细粒度匹配，对专有名词和长文档更友好
+      - SPLADE 结果可解释（能看到扩展了哪些词），可直接复用倒排索引引擎
+      - BGE-M3 一个模型同时输出 dense、sparse、multi-vector 三种表示
+      - ColPali 把同样的 late interaction 用在文档页面图像的 patch 上
+    followups:
+      - 什么场景值得为多向量检索付出存储成本？
+      - learned sparse 和 BM25 相比，在领域外数据上表现如何？
+
+  # ---------- Query 侧 ----------
+  - id: agent-rag-query-rewrite
+    q: Query 改写有哪些常见做法？多轮对话里的 query 为什么一定要改写？
+    topics: [rag]
+    difficulty: 2
+    answer_brief: >-
+      用户原始 query 常常口语化、带指代、缺上下文，或一次问多件事，直接检索效果差。
+      常见改写：多轮对话中结合历史做指代消解，补全成独立问题；把口语改成文档用语或扩展同义词；生成多个改写并行检索再融合（multi-query）；
+      把复合问题分解成子问题；或先抽象出更上位的问题检索背景知识（step-back）。
+    key_points:
+      - 多轮例子：「那它的价格呢？」要改成「XX 产品的价格是多少」再检索
+      - multi-query：生成 3-5 个变体分别检索，用 RRF 融合提升召回
+      - 分解：「A 和 B 哪个贵」拆成两次检索
+      - 位置：意图识别之后、检索之前；简单 query 可跳过以省延迟
+      - 风险是改写漂移改变原意，保留原 query 一起检索做兜底
+    followups:
+      - 改写用什么模型，才不会明显拖慢首 token 延迟？
+      - 怎么评估改写到底有没有带来提升？
+
+  - id: agent-rag-hyde
+    q: HyDE 是什么原理？它在什么情况下有用，什么情况下会帮倒忙？
+    topics: [rag]
+    difficulty: 3
+    answer_brief: >-
+      HyDE（Hypothetical Document Embeddings）先让 LLM 针对问题写一段「假设的答案文档」，再用这段假文档的 embedding 去检索真实文档。
+      动机是问题和答案在表达形式上差距大，而假答案与真实文档在用词和风格上更接近，检索变成「文档找文档」。
+      它在零样本、问题很短、问答不对称时有效；但模型对该领域一无所知时，假文档会把检索带偏，还多一次生成的延迟。
+    key_points:
+      - 2022 年论文 Precise Zero-Shot Dense Retrieval without Relevance Labels
+      - 假文档里的事实错了也不要紧，只用它的向量检索，答案仍依据真实文档
+      - 可生成多份假文档、对向量取平均，降低方差
+      - 不适合：私有领域专有名词、实时数据、精确数值查询
+      - 反向思路：离线为每个 chunk 生成可能被问到的问题，用问题去匹配问题
+    followups:
+      - HyDE 和为每个 chunk 生成假设问题有什么区别？
+      - 怎么判断某类 query 该不该走 HyDE？
+
+  - id: agent-rag-query-routing
+    q: RAG 系统里的意图识别和 query 路由怎么做？怎么判断一个问题该不该检索、该去哪个知识库查？
+    topics: [rag, agent]
+    difficulty: 3
+    answer_brief: >-
+      在检索前加一层路由，判断问题属于：闲聊或通用知识（不检索直接答）、需要查文档（去哪个知识库）、需要实时或结构化数据（调 API 或 text-to-SQL）、
+      还是超出范围（拒答或转人工）。实现上从便宜到贵依次是规则关键词、小分类模型或 embedding 匹配意图样例、LLM 借工具描述做 function calling 路由；
+      通常组合使用，高频确定意图走规则，长尾交给 LLM。
+    key_points:
+      - 不该检索的问题强行检索，会塞入无关 chunk 让模型答偏
+      - 多知识库各自建索引，路由到一个或多个库后再融合结果
+      - 统计、排序、聚合类问题走 SQL 远比向量检索准
+      - 路由要输出置信度，低置信时多路并查或向用户澄清
+      - 路由准确率要单独评测，否则会掩盖在检索指标里
+    followups:
+      - 意图类别经常变化时，路由模型怎么维护？
+      - 规则、分类模型、LLM 路由之间的延迟和准确率怎么平衡？
+
+  # ---------- 进阶 RAG ----------
+  - id: agent-rag-multi-hop
+    q: 遇到「A 公司 CEO 毕业的大学在哪个城市」这种多跳问题，单次向量检索为什么不行？应该怎么做？
+    topics: [rag, agent]
+    difficulty: 3
+    answer_brief: >-
+      单次检索只能拿问题整体去匹配，而第二跳要查的实体（CEO 是谁、是哪所大学）在检索前还未知，往往只能命中第一跳，甚至都命中不了。
+      做法是迭代检索：把问题分解成有依赖关系的子问题依次检索，或让模型边推理边检索，每一步用上一步得到的中间答案构造新 query，直到信息足够再作答。
+    key_points:
+      - query 分解：先规划子问题链，前一个答案填入下一个 query
+      - 交替推理与检索：IRCoT 每生成一步推理就检索一次；Self-Ask 显式生成追问
+      - Agentic 方式：检索作为工具，模型自主决定下一步搜什么、何时停止
+      - 图方法：实体关系抽成知识图谱后沿边遍历，天然适合多跳
+      - 风险：误差累积，第一跳错后面全错；要限制最大步数控制延迟
+    followups:
+      - 怎么判断一个问题是不是多跳问题？
+      - 多跳检索的延迟怎么控制？
+
+  - id: agent-rag-agentic-rag
+    q: Agentic RAG 和传统 RAG 有什么本质区别？各自适合什么场景？
+    topics: [rag, agent]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      传统 RAG 是固定流水线：每个问题检索一次、取 top-k、生成一次，检索时机和方式都写死。
+      Agentic RAG 把检索变成 Agent 可调用的工具，由模型在循环里自主决定要不要检索、查什么、查哪个数据源、结果够不够、要不要换 query 重查，并可组合 SQL、Web 搜索等工具。
+      前者快、便宜、可控，适合 FAQ 和单跳事实问答；后者适合多跳、开放式调研和多数据源问题，代价是延迟、成本和不确定性更高。
+    key_points:
+      - 核心能力：按需检索、多轮迭代、反思检索质量、多源路由
+      - 典型实现是 ReAct 循环加 search / read 工具，deep research 类系统是极致形态
+      - 风险：重复检索、死循环、token 失控，需要最大步数和预算上限
+      - 评测更难：除最终答案外，还要看检索调用次数、路径合理性和成本
+      - 实践上先用传统 RAG 打底，复杂问题再路由到 agentic 链路
+    followups:
+      - 怎么防止 Agent 反复检索同样的内容？
+      - 一个问题该走传统 RAG 还是 Agentic RAG，怎么判断？
+
+  - id: agent-rag-self-rag-crag
+    q: 检索回来的内容可能不相关或质量差，Self-RAG、CRAG 这类方法是怎么让系统判断并纠正的？
+    topics: [rag, agent]
+    difficulty: 4
+    answer_brief: >-
+      两者都在「检索 → 生成」之间加入自我评估。Self-RAG 训练模型输出特殊的反思 token：决定是否需要检索、判断检索片段是否相关、
+      生成内容是否被证据支持、回答是否有用，并据此挑选片段和输出。
+      CRAG（Corrective RAG）用一个轻量检索评估器给结果打分：判为正确就精炼后使用，判为错误就丢弃并改用 Web 搜索，模棱两可则两者结合。
+    key_points:
+      - Self-RAG 的反思能力是训练进模型的，可以按需检索而非每次都检索
+      - CRAG 是即插即用的外挂模块，不用改生成模型
+      - CRAG 的知识精炼：把文档拆成细粒度片段，过滤无关部分再重组
+      - 工程简化版：用 LLM 或 reranker 给检索结果打分，低于阈值就改写 query 重检或拒答
+      - 代价是额外的模型调用和延迟
+    followups:
+      - 不训练模型的前提下，怎么实现类似 Self-RAG 的效果？
+      - 相关性评估器自己判错了怎么办？
+
+  - id: agent-rag-graphrag
+    q: GraphRAG 是怎么构建索引和检索的？它解决了向量 RAG 的什么问题，代价是什么？
+    topics: [rag]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      向量 RAG 擅长找局部相似片段，但回答「这批文档整体讲了哪些主题」这类全局问题、或需要跨文档串联实体关系的问题时很弱。
+      以微软 GraphRAG 为例：索引阶段用 LLM 从文本块抽取实体、关系和声明构成知识图谱，用 Leiden 算法做层级社区划分，再自底向上为每个社区生成摘要。
+      查询时 global search 对社区摘要做 map-reduce 回答全局问题，local search 从相关实体出发沿邻居收集上下文回答具体问题。
+    key_points:
+      - 擅长：全局总结、多跳关系、跨文档实体关联类问题
+      - 代价：建索引要对全量文本多次调用 LLM，成本和耗时远高于向量索引
+      - 实体抽取质量决定上限：同名合并、别名、漏抽都会出错
+      - 增量更新难，新文档会改变社区结构，常需局部或全量重算
+      - 微软实现还有 DRIFT search（local 加社区信息）；LightRAG 等是更轻量的变体
+    followups:
+      - 什么场景不值得上 GraphRAG？
+      - GraphRAG 的社区摘要怎么做权限控制？
+
+  - id: agent-rag-multimodal
+    q: 知识库里有大量扫描页、图表和幻灯片，多模态 RAG 怎么做？
+    topics: [rag, multimodal]
+    difficulty: 4
+    answer_brief: >-
+      两条路线。一是「转文本」：用 OCR、版面分析和 VLM 把图片、图表转成文字描述再走文本 RAG，成熟便宜，但转换会丢信息。
+      二是「直接嵌入页面图像」：如 ColPali 用视觉语言模型把整页截图编码成多个 patch 向量，用 late interaction 与 query 匹配，跳过解析，对图表和版式密集的文档效果好。
+      生成阶段把命中的原始页面图像交给多模态大模型阅读作答。
+    key_points:
+      - 文本路线：caption、OCR、图表转数据表，统一用文本 embedding
+      - 统一向量空间：CLIP 类模型把图和文映射到同一空间，适合以文搜图
+      - ColPali 基于 PaliGemma，每页约上千个 patch 向量，存储成本高
+      - 生成时把原图和文字证据一起给 VLM，避免只读二手描述
+      - 难点：图表数值精确提取、跨页关联、把引用定位到页面区域
+    followups:
+      - 只有文本 embedding 模型时，图片里的信息怎么被检索到？
+      - 多模态 RAG 怎么评测？
+
+  # ---------- 生产问题 ----------
+  - id: agent-rag-citation
+    q: 怎么让 RAG 的回答带上可靠的引用，做到每句话都可追溯？
+    topics: [rag]
+    difficulty: 3
+    answer_brief: >-
+      分三步。入库时给每个 chunk 保留稳定 ID 和来源 metadata（文档、版本、页码、位置）；
+      生成时把证据按编号放进 prompt，要求每个论断后标注引用编号，没有证据支持的内容不写或明确说明；
+      生成后校验引用编号是否存在、被引片段是否真的支持对应论断（用 NLI 模型或 LLM 判断），不通过就删句、重写或拒答。
+    key_points:
+      - 引用粒度：文档级最粗，chunk 级最常用，句子级或字符区间最精确
+      - 编号用系统生成的 ID，不能让模型自己编来源或 URL
+      - 后校验逐句做蕴含判断，可统计 citation precision / recall
+      - 前端展示原文高亮和跳转，方便用户核验
+      - 部分模型 API 提供原生 citations 功能，可返回被引原文区间
+    followups:
+      - 模型引用了正确的文档但理解错了内容，怎么发现？
+      - 引用校验带来的额外延迟怎么控制？
+
+  - id: agent-rag-kb-update
+    q: 知识库文档会不断新增、修改和删除，怎么做增量更新，并避免新旧版本同时被召回？
+    topics: [rag, vector-search]
+    difficulty: 3
+    answer_brief: >-
+      以文档为单位管理：每个文档有稳定的 doc_id、内容哈希和版本号，每个 chunk 记录所属 doc_id 和版本。
+      检测到内容哈希变化时，先为新版本解析、切分、编码并写入，再删除或标记失效旧版本的全部 chunk，最后切换当前版本；删除文档按 doc_id 清理所有 chunk。
+      查询时按 is_latest 或有效期过滤，确保只召回当前版本。
+    key_points:
+      - 只增不删会召回过期内容，新旧冲突让答案自相矛盾
+      - 用内容哈希判断是否需要重建；chunk 级哈希可只更新变化部分
+      - 先写新再删旧，配合版本字段过滤，避免出现空窗或重复
+      - HNSW 删除多为标记删除，大量删除后要定期 compaction 或重建
+      - 冲突时按时间、权威等级排序，并在答案里注明依据的版本日期
+      - 变更保留审计日志，支持灰度和回滚
+    followups:
+      - 实时性要求到分钟级时，更新链路怎么设计？
+      - 两个来源的文档内容互相矛盾，模型该怎么回答？
+
+  - id: agent-rag-permission
+    q: 企业 RAG 怎么保证不会把当前用户无权查看的内容检索出来、写进答案？
+    topics: [rag, agent-safety]
+    difficulty: 3
+    answer_brief: >-
+      权限必须在检索层强制执行，不能靠 prompt 让模型「别说」。入库时把文档 ACL（可见的用户、组、部门、租户、密级）同步到每个 chunk 的 metadata；
+      查询时根据当前用户身份生成过滤条件，在向量检索和 BM25 里同时生效，让无权 chunk 根本进不了候选集。
+      多租户场景最好按租户物理隔离索引。
+    key_points:
+      - 召回后再过滤会导致 top-k 不足，中间环节也有泄漏风险
+      - 源系统撤权要及时同步到索引，否则撤权后仍然可见
+      - 语义缓存、检索缓存的 key 要带用户或权限维度
+      - 摘要、GraphRAG 社区摘要等派生内容要继承源文档权限
+      - 审计记录每次给哪个用户召回了哪些 chunk
+    followups:
+      - 用户属于上千个组、过滤条件过长时怎么办？
+      - 权限变更的同步延迟怎么处理？
+
+  - id: agent-rag-latency-cost
+    q: RAG 系统线上延迟高、成本高，你会从哪些环节入手优化？
+    topics: [rag, inference]
+    difficulty: 3
+    answer_brief: >-
+      先用 trace 拆出各环节耗时：query 改写、embedding、检索、rerank、LLM 生成，通常 LLM 的首 token 和输出长度占大头。
+      再针对性优化：多路召回并行；改写用小模型，简单 query 直接跳过；控制 rerank 候选数；压缩进入上下文的 token；
+      高频问题做缓存；流式输出降低体感延迟；按难度把问题路由到不同规格的模型。
+    key_points:
+      - 并行：多路召回、多个子问题检索同时发出
+      - 缓存：embedding、检索结果、语义缓存，注意时效和权限隔离
+      - 上下文压缩：rerank 后只留 top 3-5，或用 LLMLingua 类方法删冗余 token
+      - 稳定前缀（系统提示、固定文档）放最前面，命中 prompt caching
+      - 检索侧：量化索引、调小 efSearch / nprobe，在召回和延迟间取舍
+      - 模型路由：简单问题用小模型，复杂问题再上大模型
+    followups:
+      - 语义缓存的相似度阈值怎么定？
+      - 上下文压缩可能伤害哪些类型的问题？
+
+  # ---------- 评测与排查 ----------
+  - id: agent-rag-eval-retrieval-metrics
+    q: 评估 RAG 检索质量常用哪些指标？Recall@k、MRR、nDCG 分别怎么算、衡量什么？
+    topics: [rag, evaluation]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      检索评测需要每个问题标注相关文档或 chunk。Recall@k 是 top-k 命中的相关项占全部相关项的比例，衡量「该找的找全没有」，对 RAG 最关键；
+      Hit Rate@k 只看 top-k 里是否至少命中一个。MRR 是第一个相关结果排名倒数的平均，衡量正确结果排得多靠前。
+      nDCG@k 支持分级相关度并按位置对数折扣，衡量整体排序质量；Precision@k 看 top-k 里噪声多少。
+    key_points:
+      - MRR = 平均(1 / 第一个相关结果的排名)，未命中记 0
+      - DCG@k = Σ rel_i / log2(i+1)，再除以理想排序的 IDCG 得到 nDCG
+      - RAG 先看 recall@k，k 取实际送入 LLM 的数量，再看排序指标
+      - 召回阶段和 rerank 阶段分别算，区分是召回不到还是排不上来
+      - chunk 级标注在切分策略变化后会失效，可改用答案片段是否出现来判定命中
+    followups:
+      - 没有标注数据时怎么评估检索？
+      - 为什么 recall@k 提高了，最终答案却没有变好？
+
+  - id: agent-rag-eval-generation
+    q: RAG 的生成质量怎么评？Faithfulness、Answer Relevance、Context Precision、Context Recall 分别衡量什么？
+    topics: [rag, evaluation]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      RAG 要把检索和生成拆开评。RAGAS 一类框架用 LLM 当评委：Faithfulness 把答案拆成若干论断，看多大比例能被检索上下文支持，衡量是否幻觉；
+      Answer Relevance 衡量答案是否切题回答了问题；Context Precision 看相关片段是否排在前面、噪声多少；
+      Context Recall 看参考答案所需的信息有多少被检索覆盖。前两个不需要参考答案，Context Recall 需要。
+    key_points:
+      - Faithfulness 只衡量忠于上下文，上下文本身错了答案仍会错
+      - Answer Relevance 的一种算法：从答案反推问题，再与原问题算相似度
+      - 端到端还要看 answer correctness，即与标准答案对比
+      - LLM 评委有偏差，需人工抽样校准，并固定评委模型和 prompt 版本
+      - TruLens 的 RAG Triad：context relevance、groundedness、answer relevance
+    followups:
+      - RAG 测试集怎么构建？LLM 合成数据和人工标注各有什么问题？
+      - 只有最终答案的打分时，怎么判断问题出在检索还是生成？
+
+  - id: agent-rag-debug-no-recall
+    q: 文档明明已经入库，但相关问题始终召回不到正确的 chunk，你会怎么一步步排查？
+    topics: [rag, vector-search]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      沿数据链路从源头往后查。先确认数据：文档是否真的入库成功、解析出的文本是否正确（表格、扫描件常解析成乱码或空白）、答案是否被 chunk 切断、
+      权限或 metadata 过滤是否误伤。再看检索：用答案原文直接检索能否命中，区分是向量表示问题还是 query 表述问题；
+      查正确 chunk 的实际排名，在候选池外是召回问题，在池内排不上来是排序问题。最后针对性改切分、加混合检索、改写 query、换或微调 embedding、加 rerank。
+    key_points:
+      - 先看原始解析结果和 chunk 内容，很多问题出在解析而不是模型
+      - 核对 query 和文档用的是同一 embedding 模型、同一预处理，有无截断
+      - 专有名词、编号类 query 召回不到，优先加 BM25 混合检索
+      - 正确 chunk 在 top-100 内但不在 top-5，加 rerank；完全不在，改召回侧
+      - 失败样本沉淀为回归集，每次改动都跑一遍
+    followups:
+      - 怎么区分是 embedding 模型的问题还是 chunking 的问题？
+      - 加了 BM25 之后另一些 query 反而变差了，怎么办？
+
+  - id: agent-rag-debug-wrong-answer
+    q: 检索结果里已经有正确证据，模型却还是答错或出现幻觉，可能是什么原因？怎么解决？
+    topics: [rag, prompt-engineering]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      说明问题在上下文组织和生成环节。常见原因：正确片段被大量噪声淹没或放在中间被忽略；上下文过长被截断；多个片段冲突（新旧版本）；
+      prompt 没约束模型只依据证据，模型用了参数里的过时知识；或问题需要跨片段推理、计算而模型能力不够。
+      解决方向：减少并重排上下文、去重去冲突、强化「只依据资料，没有就说不知道」并要求引用，必要时加生成后校验。
+    key_points:
+      - 先看实际送进模型的完整 prompt，确认证据没被截断、顺序合理
+      - 控制 top_k，rerank 后只留高分片段，降低干扰
+      - 指令约束：只依据给定资料、标注引用、资料不足时明确拒答
+      - 冲突处理：按版本或时间过滤，或在片段上标日期让模型取最新
+      - 后校验：用 NLI 或 LLM 检查每个论断是否被证据支持，不支持就重写
+      - 数值计算、表格推理交给代码执行或 SQL，不让模型心算
+    followups:
+      - 怎么量化幻觉率？
+      - 模型过度拒答（明明有证据却说不知道）怎么办？

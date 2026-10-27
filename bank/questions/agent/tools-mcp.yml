@@ -1,0 +1,660 @@
+# yaml-language-server: $schema=../../../schema/questions.schema.json
+source:
+  name: open-interview · Agent 面试卡组
+  license: CC-BY-SA-4.0
+
+defaults:
+  lang: zh
+  type: technical
+  roles: [ai-agent]
+  topics: [tool-use]
+
+questions:
+  # ---------- 工具调用：接口与协议细节 ----------
+  - id: agent-tool-tool-choice
+    q: tool_choice 参数有哪些取值？什么场景下要强制模型调用工具，什么时候要禁止调用？
+    topics: [tool-use]
+    difficulty: 2
+    answer_brief: >-
+      主流 API 大致有四种：auto（模型自己决定调不调、调几个，默认值）、required / any（至少调一个）、指定某个工具（必须调它）、none（不准调用）。
+      强制调用适合流程第一步必须查数据，或把工具当结构化抽取器用；禁止调用适合让模型基于已有结果收尾总结。
+      默认用 auto 加好的描述和提示引导，往往比硬约束更稳。
+    key_points:
+      - OpenAI：auto / required / 指定函数 / none，另有 allowed_tools 限定可用子集
+      - Anthropic：auto / any / tool / none，并可关闭并行调用
+      - Anthropic 部分最新模型已不支持强制 any / tool，官方建议 auto 加 strict
+      - 强制调用会压制「其实不需要工具」的判断，模型可能硬凑参数
+      - 自部署模型可用前缀填充或 logits 掩码实现 required 和指定子集
+    followups:
+      - 为了拿 JSON 而强制调用一个「假工具」，和直接用 Structured Outputs 比有什么区别？
+
+  - id: agent-tool-provider-formats
+    q: OpenAI 和 Anthropic 的工具调用在接口格式上有哪些差异？如果要做一层多模型适配，需要注意什么？
+    topics: [tool-use, agent-framework]
+    difficulty: 3
+    answer_brief: >-
+      定义：OpenAI 用 parameters，Anthropic 用 input_schema。调用：OpenAI 在 tool_calls 里、参数是 JSON 字符串；Anthropic 是 content 里的 tool_use 块、input 已是对象。
+      回填：OpenAI 发 role=tool 的消息带 tool_call_id；Anthropic 在下一条 user 消息里放 tool_result 块带 tool_use_id。
+      适配层要把这些统一成内部格式。
+    key_points:
+      - 停止原因映射：finish_reason=tool_calls 对应 stop_reason=tool_use
+      - Responses API 用 function_call_output 项回填结果，以 call_id 关联
+      - 各家支持的 JSON Schema 子集和 strict 模式限制不同，要做兼容性校验
+      - 并行调用开关、强制调用、思考内容回传等能力不完全对等，要能降级
+      - 内部用统一的工具定义和消息模型，存储、回放都基于它，不绑死某一家格式
+    followups:
+      - 同一个 Agent 在对话中途切换模型提供方，会遇到哪些问题？
+
+  - id: agent-tool-fc-no-native
+    q: 如果要用一个不支持原生 function calling 的模型（比如自部署的基座模型）做工具调用，你会怎么实现？
+    topics: [tool-use, prompt-engineering]
+    difficulty: 3
+    answer_brief: >-
+      用提示词约定输出格式：在 system 里列出工具名、描述和参数 schema，要求需要调用时输出固定格式，比如包在 <tool_call> 标签里的 JSON，
+      或 ReAct 的 Action / Action Input 行；应用解析后执行，再把结果以 Observation 的形式拼回上下文。
+      为了更稳，可以加 few-shot 示例、用 stop 序列在调用处截断，自部署时再配合约束解码保证格式合法。
+    key_points:
+      - 解析要容错：提取第一个合法 JSON，失败时把错误回给模型重写
+      - 用 stop 序列（如 Observation:）截断，防止模型自己编造工具结果
+      - 代码、长文本参数放在 JSON 里转义多易错，可改用 XML 标签分隔参数
+      - vLLM 等推理框架提供 tool parser，可把这类文本格式转成标准 tool_calls
+      - 效果仍不够时，用工具调用轨迹数据做一轮 SFT
+    followups:
+      - 解析失败率很高时，你会先排查哪几个地方？
+
+  - id: agent-tool-constrained-decoding
+    q: Structured Outputs / strict 模式背后的约束解码是怎么实现的？对 schema 有什么限制，开销在哪？
+    topics: [tool-use, inference]
+    difficulty: 4
+    hot: true
+    answer_brief: >-
+      把 JSON Schema（或正则、CFG 语法）编译成自动机，每步解码前根据当前状态算出哪些 token 合法，把其余 token 的 logits 置为负无穷再采样，
+      所以输出必然符合语法。难点是词表很大、一个 token 可能跨多个字符，需要预计算「状态 → 合法 token 集合」的索引；
+      JSON 这类嵌套结构要用下推自动机，逐步算 mask 更贵。
+    key_points:
+      - 正则或扁平 schema 可编成有限状态机并预建索引，这是 Outlines 的思路
+      - XGrammar 把 token 分为上下文无关 / 相关两类，前者预计算缓存，论文称超过 99%
+      - 新 schema 首次编译有延迟，要缓存；mask 计算可与 GPU 前向重叠
+      - OpenAI strict 要求禁止额外字段、所有字段 required，可选值用 null 类型表示
+      - 只保证结构合法，不保证取值正确；被 max_tokens 截断或拒答时仍可能不完整
+    followups:
+      - vLLM / SGLang 里开启结构化输出有哪些后端可选？
+      - 约束解码会不会把模型逼到低概率的输出路径上？
+
+  # ---------- 工具集设计与规模化 ----------
+  - id: agent-tool-granularity
+    q: 给 Agent 设计一组工具时，是把每个 API 接口一对一包成工具，还是合并成更高层的工具？命名和边界怎么定？
+    topics: [tool-use]
+    difficulty: 3
+    answer_brief: >-
+      不建议机械地一对一包装 API：细粒度工具会让 Agent 多轮往返、搬运大量中间数据，也更容易选错。
+      应围绕真实任务设计少量高层工具，比如用一个 schedule_event 代替 list_users、list_events、create_event 三步，并避免功能重叠。
+      但工具也不能大而全，参数太多同样降低准确率，粒度最终要靠评测来定。
+    key_points:
+      - 合并高频的多步组合，减少调用轮次和中间结果 token
+      - 功能重叠的工具会让模型犹豫和选错，宁少勿滥
+      - 按服务和资源加前缀做命名空间，如 asana_search、jira_search
+      - 需要拦截、审批、审计的危险动作单独做成专用工具，不要藏在通用 bash 里
+      - 专用工具便于调度：只读工具可标记为可并行，写操作串行
+    followups:
+      - 什么时候直接给 Agent 一个通用的 bash 或代码执行工具更好？
+
+  - id: agent-tool-many-tools-selection
+    q: 一个 Agent 接了几百个工具（比如挂了十几个 MCP Server），模型经常选错、上下文也被工具定义占满，你会怎么解决？
+    topics: [tool-use, mcp, context-engineering]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      核心是不把所有工具定义一次性塞进上下文，而是按需加载。三类做法：工具检索，对工具名和描述建索引，按当前任务召回 top-k 再交给模型；
+      分层路由，先选领域或子 Agent，再在小工具集里选；让模型自己调用一个「搜索工具」的工具，按需展开定义。
+      同时合并重叠工具、精简描述，并用评测检查召回率和选择准确率。
+    key_points:
+      - OpenAI 的建议是一轮开始时可用函数少于 20 个
+      - Anthropic 的 Tool Search（defer_loading）官方称工具定义的上下文开销降约 85%
+      - RAG-MCP 论文：先检索再选，工具选择准确率从 13.62% 提到 43.13%
+      - 换工具会破坏 prompt cache：只追加不替换，或保留定义用 logits 掩码限制
+      - 防漏召回：高频工具常驻，允许模型再次搜索
+    followups:
+      - 工具检索的索引用什么文本来建效果最好？
+      - 工具列表中途变化对 KV cache 有什么影响？
+
+  - id: agent-tool-multi-step-rollback
+    q: Agent 连续执行了几个有副作用的工具调用，中间某一步失败了，前面已经生效的操作怎么办？
+    topics: [tool-use, distributed-systems]
+    difficulty: 4
+    answer_brief: >-
+      跨系统的工具调用没法用数据库事务保证原子性，通常借鉴 Saga：每个写工具配一个补偿操作（创建对应删除、扣款对应退款），
+      框架持久化已成功的步骤，失败时按逆序执行补偿。更根本的是减少需要回滚的情况：先读后写、写前预检，
+      把多步写合并成一个由后端保证事务的工具，高风险步骤前人工确认。
+    key_points:
+      - 执行日志持久化每步的参数、结果和补偿信息，进程重启后也能继续补偿
+      - 补偿由确定性代码执行，不交给模型临场发挥
+      - 补偿本身也要幂等，补偿失败进入人工处理队列
+      - 不可逆动作（发邮件、对外付款）放到流程最后并加审批
+      - dry-run：先生成执行计划和变更预览，确认后再提交
+    followups:
+      - 有些操作根本无法补偿，流程该怎么设计？
+
+  - id: agent-tool-tool-versioning
+    q: 线上 Agent 的工具定义要改（改名、加参数、改描述），会有什么风险？工具变更你会怎么管理和发布？
+    topics: [tool-use, evaluation]
+    difficulty: 3
+    answer_brief: >-
+      工具定义本身就是 prompt，改一句描述都可能改变模型选工具和填参数的行为；改名或改参数还会让长会话里的旧调用、回放用的历史轨迹和下游解析失效，
+      同时打掉 prompt cache。所以要像发布 prompt 一样管理：工具定义纳入版本控制，变更前跑工具调用回归评测，
+      对比选择准确率、参数正确率和任务成功率，再灰度上线并保留回滚能力。
+    key_points:
+      - 向后兼容：新增参数给默认值，旧参数先标弃用再删除
+      - 改名时短期保留旧名作为别名，避免进行中的会话出错
+      - trace 记录每次调用对应的工具定义版本，问题可追溯到具体变更
+      - 回归集要覆盖「相似工具二选一」这类易混场景，描述改动最容易影响这里
+      - MCP Server 改了工具要发 list_changed 通知，客户端重新拉取
+    followups:
+      - 长会话进行到一半时工具定义变了，你会怎么处理？
+
+  - id: agent-tool-ask-user-tool
+    q: Agent 缺少关键信息时，是让它直接在回复里问用户，还是专门做一个「向用户提问」的工具？各有什么好处？
+    topics: [tool-use, agent]
+    difficulty: 2
+    answer_brief: >-
+      直接在回复里问最简单，但这一轮 Agent 就结束了，问题格式也不受控。做成工具（如 ask_user，参数是问题和可选项）后，
+      运行时可以渲染成选项弹窗或表单，阻塞当前循环等待回答，再把答案作为工具结果回填，Agent 在同一个任务里接着干；
+      调用记录也便于统计 Agent 多久问一次、问得是否必要。
+    key_points:
+      - 适合长任务中途确认，不打断任务状态和已有上下文
+      - 结构化选项减少歧义，用户点选即可，答案可直接解析
+      - 描述里写清何时该问：缺必填信息、高风险分支、多种理解差异大
+      - 避免过度提问：能从上下文或其他工具查到的不要问
+      - MCP 的 elicitation 是由 Server 发起的同类机制
+    followups:
+      - 后台无人值守运行的 Agent 遇到需要提问的情况，怎么办？
+
+  - id: agent-tool-tool-hooks
+    q: Agent 框架里，工具调用前后的拦截点（hook / 中间件）通常用来做什么？举几个例子。
+    topics: [tool-use, agent-framework]
+    difficulty: 3
+    answer_brief: >-
+      拦截点让确定性代码在模型和工具之间把关。调用前可以做参数校验和改写、权限与策略检查、危险操作拦截或转人工审批、注入凭证；
+      调用后可以做结果截断和脱敏、格式化、审计日志、触发自动检查（比如改完代码自动跑格式化和测试）。
+      好处是这些规则不依赖模型遵守提示，调整策略也不用改 prompt。
+    key_points:
+      - Claude Code 提供 PreToolUse、PostToolUse 等 hook，PreToolUse 可直接拒绝调用
+      - OpenAI Agents SDK 有生命周期 hooks 和输入 / 输出 guardrails
+      - 拒绝时把明确原因返回给模型，让它换做法，而不是静默失败
+      - hook 要快且可靠，超时或异常时是放行还是拒绝要事先定好
+      - 所有拦截决策写进 trace，便于审计和调优策略
+    followups:
+      - 用 hook 校验和在工具实现内部校验，有什么区别？
+
+  # ---------- 典型工具：搜索、代码执行、computer use ----------
+  - id: agent-tool-web-search-tool
+    q: 给 Agent 接入联网搜索能力时，搜索和网页读取工具应该怎么设计？要注意哪些问题？
+    topics: [tool-use, rag]
+    difficulty: 3
+    answer_brief: >-
+      一般拆成两个工具：search 返回少量结果的标题、URL、摘要和日期，让模型先判断相关性；fetch 按 URL 抓取正文，清洗成 Markdown 后截断或分页返回。
+      模型可以多次改写查询、按需打开页面。要控制每轮结果数和正文长度，保留来源用于引用，按域名做白名单或黑名单，
+      并把网页内容当作不可信输入，防止其中的指令被执行。
+    key_points:
+      - 查询由模型生成，描述里提示关键词、时间范围、站点限定等写法
+      - 结果去重，按时间和权威度排序，摘要不够时才抓全文
+      - 正文抽取去掉导航、广告和脚本，长页面按段落分页
+      - 保留 URL 和抓取时间，最终回答逐条标注来源
+      - 只允许抓取搜索结果或对话中已出现的 URL，防数据外传和访问内网
+    followups:
+      - 多个搜索结果互相矛盾时，Agent 该怎么处理？
+
+  - id: agent-tool-code-interpreter-design
+    q: 如果要给 Agent 提供一个 code interpreter（代码执行）工具，接口和执行环境你会怎么设计？
+    type: system-design
+    topics: [tool-use, agent]
+    difficulty: 3
+    answer_brief: >-
+      接口上一般是一个 execute 工具：输入代码，返回 stdout、stderr、最后表达式的值、生成的图片和文件列表，出错时返回完整 traceback 便于模型自我修正。
+      执行环境为每个会话分配一个隔离沙箱，里面跑有状态的 Python 内核（如 Jupyter kernel），变量和文件在多次调用间保留；
+      用户文件通过上传挂载进来，产出文件通过下载接口取回。
+    key_points:
+      - 超长 stdout 只保留首尾并提示总长度，避免撑爆上下文
+      - 单次执行超时、会话空闲回收；内核重启后要明确告诉模型状态已丢失
+      - 预装常用数据分析库，用预热池或快照降低冷启动
+      - 图片以附件或多模态内容返回，表格优先返回摘要和前几行
+      - 按不可信代码隔离，默认禁止出网，资源配额按会话限制
+    followups:
+      - 多个用户同时使用时，执行环境怎么调度和回收？
+
+  - id: agent-tool-computer-use
+    q: Computer use 类 Agent（如 Claude computer use、OpenAI Operator）是怎么操作电脑的？主要难点在哪？
+    topics: [tool-use, multimodal]
+    difficulty: 3
+    answer_brief: >-
+      把屏幕当作环境：循环「截图 → 多模态模型看图决定动作 → 输出点击、输入、按键、滚动等带坐标的工具调用 → 宿主在虚拟机或浏览器里执行 → 再截图观察结果」。
+      优点是能操作任何没有 API 的图形界面；难点是像素级定位不准、每步都要截图导致又慢又贵、长流程容易出错且难恢复，
+      以及屏幕内容里的提示注入。
+    key_points:
+      - 动作空间：screenshot、click(x, y)、type、key、scroll、drag 等
+      - 截图会被缩放，坐标要在模型坐标系和真实屏幕之间换算
+      - 有 API 或 DOM 时优先用它们，像素操作作为兜底
+      - 在隔离的虚拟机或容器里运行，限制网络和账号权限，关键操作人工确认
+      - 常用评测：OSWorld（桌面操作系统）、WebArena（网页）
+    followups:
+      - 怎么降低 computer use 每一步的延迟和成本？
+
+  # ---------- MCP：概念与架构 ----------
+  - id: agent-tool-mcp-what
+    q: MCP 是什么？它要解决什么问题，为什么常被比作 AI 应用的 USB-C？
+    topics: [mcp, tool-use]
+    difficulty: 1
+    hot: true
+    answer_brief: >-
+      MCP（Model Context Protocol）是 Anthropic 在 2024 年 11 月开源的开放协议，基于 JSON-RPC 2.0，规定 AI 应用如何发现和使用外部的工具、数据和提示模板。
+      没有统一协议时，M 个 AI 应用对接 N 个系统要做 M×N 套集成；有了 MCP，每个系统实现一次 Server，
+      任何支持 MCP 的客户端都能接入，变成 M+N，就像 USB-C 统一了接口。
+    key_points:
+      - 设计借鉴 LSP（语言服务器协议）统一编辑器生态的做法
+      - Server 暴露三类能力：Tools、Resources、Prompts
+      - 统一的是发现、调用、鉴权和传输，并不替代模型的 function calling
+      - OpenAI、Google、微软等相继支持；2025 年 12 月捐给 Linux 基金会下的 AAIF
+      - 代价：多一层进程或网络开销，引入第三方 Server 的安全和供应链风险
+    followups:
+      - 什么场景下没必要上 MCP，直接写 function calling 就行？
+
+  - id: agent-tool-mcp-architecture
+    q: MCP 里的 Host、Client、Server 分别是什么？它们之间是什么关系？
+    topics: [mcp]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      Host 是面向用户的 AI 应用（如 Claude Desktop、Cursor、Claude Code），负责调用模型、管理对话、执行权限策略和用户授权；
+      Client 是 Host 内部的连接器，每个 Client 只和一个 Server 保持 1:1 连接；Server 是提供能力的程序，可以是本地子进程，也可以是远程服务。
+      一个 Host 可以同时创建多个 Client，连接多个 Server。
+    key_points:
+      - 模型不直接连 Server：模型提出调用，Host 经对应的 Client 转发
+      - Server 看不到完整对话，也看不到其他 Server，跨 Server 协作由 Host 控制
+      - Host 负责安全：用户同意、工具审批、跨 Client 的上下文聚合
+      - 能力协商：双方声明各自支持的特性，只使用对方声明过的能力
+      - 设计原则：Server 要极易实现、可组合，复杂编排留给 Host
+    followups:
+      - 规范为什么要求 Server 看不到完整对话？
+
+  - id: agent-tool-mcp-primitives
+    q: MCP Server 提供的 Tools、Resources、Prompts 有什么区别？分别由谁决定使用？
+    topics: [mcp]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      三者按「谁控制」区分。Tools 由模型控制，是可执行的函数（查库、调 API、写文件），模型根据上下文决定是否调用；
+      Resources 由应用控制，是用 URI 标识的上下文数据（文件内容、表结构），由客户端决定何时附加给模型；
+      Prompts 由用户控制，是预定义的提示模板，通常以斜杠命令等形式由用户主动选用。
+    key_points:
+      - Tools：tools/list 发现、tools/call 调用，带 inputSchema，可选 outputSchema
+      - Resources：resources/list、resources/read，支持 URI 模板和变更订阅
+      - Prompts：prompts/list、prompts/get，可带参数，返回一组消息
+      - 有副作用的动作用 Tool，纯数据上下文更适合 Resource
+      - 生态里 Tools 用得最多，不少客户端对 Resources、Prompts 支持有限
+    followups:
+      - 「读取某个文件」这个能力，应该做成 Tool 还是 Resource？
+
+  - id: agent-tool-mcp-vs-fc
+    q: MCP 和 function calling 是什么关系？有了 MCP 还需要 function calling 吗？
+    topics: [mcp, tool-use]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      两者不在一层：function calling 是模型能力，让模型按 schema 生成调用意图；MCP 是应用与外部系统间的接入协议，规定工具怎么被发现、调用和返回结果。
+      典型链路：Host 用 tools/list 拿到工具，转成模型 API 的 tools 参数；模型用 function calling 选工具、填参数；
+      Host 再用 tools/call 让 Server 执行。MCP 依赖而非取代 function calling。
+    key_points:
+      - FC 的工具格式各家不同，MCP 统一了工具定义、调用和结果格式
+      - FC 只管「生成调用」，执行、发现、鉴权、传输由 MCP 或应用负责
+      - MCP 还有 Resources、Prompts、通知等，超出 function calling 的范围
+      - 工具只在一个应用里用时，直接写 FC 更简单；MCP 的价值在跨应用复用
+    followups:
+      - MCP 工具的 inputSchema 怎么转成不同模型提供方的工具格式？
+
+  - id: agent-tool-mcp-vs-openapi
+    q: MCP Tool 和普通的 HTTP API / OpenAPI 文档有什么关系？为什么不直接把 OpenAPI 丢给模型？
+    topics: [mcp, tool-use]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      MCP Tool 往往就是对已有 HTTP API 的一层面向模型的封装，二者不是替代关系。直接给 OpenAPI 的问题是：接口为程序员设计，粒度细、参数多、返回冗长，
+      鉴权方式各不相同，模型容易选错、填错；而且每个 AI 应用都得自己实现调用和鉴权。
+      MCP 提供统一的发现、调用、鉴权和错误语义，也促使团队按任务重新设计工具和返回格式。
+    key_points:
+      - 可以从 OpenAPI 自动生成 MCP Server 起步，但通常要裁剪接口、重写描述
+      - MCP 支持运行时发现和列表变更通知，OpenAPI 是静态文档
+      - 统一的结果格式：文本、图片、资源链接、结构化内容
+      - 接口少、只在一个应用里用时，直接写 function calling 也完全可行
+    followups:
+      - 一个有 200 个接口的内部系统，你会暴露多少个 MCP 工具？
+
+  - id: agent-tool-skills-vs-mcp
+    q: Agent Skills 是什么？它和 MCP、function calling 的边界在哪里？
+    topics: [tool-use, mcp, context-engineering]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      Agent Skills 是 Anthropic 提出的技能包格式：一个文件夹，里面有带 YAML 头（name、description）的 SKILL.md，加上可选的脚本、模板和参考资料。
+      它提供「怎么做」的程序性知识，按渐进式披露加载：平时只有名称和描述在上下文里，相关任务出现时才读正文和附件。
+      function calling 是模型生成调用的能力，MCP 是连接外部系统的协议，Skill 则教模型怎么组合这些工具完成任务。
+    key_points:
+      - 三层加载：元数据常驻 → SKILL.md 正文按需读 → 附属文件和脚本再按需
+      - 依赖文件系统和代码执行环境，脚本由 Agent 执行，只有结果进上下文
+      - MCP 回答「能连到什么」，Skill 回答「该怎么做」，二者互补
+      - 比把所有说明塞进 system prompt 更省上下文，也便于版本管理和复用
+    followups:
+      - 一项能力该写成 Skill 还是做成 MCP 工具，你怎么判断？
+
+  # ---------- MCP：协议机制 ----------
+  - id: agent-tool-mcp-jsonrpc
+    q: MCP 为什么选用 JSON-RPC 2.0 作为消息格式？请求、响应、通知分别有什么区别？
+    topics: [mcp]
+    difficulty: 2
+    answer_brief: >-
+      JSON-RPC 2.0 足够轻量、与传输方式无关，又天然支持双向消息和请求响应关联，LSP 已经验证过这套模式。
+      请求带 method、params 和唯一 id，必须得到一个带相同 id 的响应，响应里 result 和 error 二选一；
+      通知没有 id，发出后不等回复，用于进度、取消、列表变更等事件。同一连接上可以并发多个请求，靠 id 匹配响应。
+    key_points:
+      - 错误码沿用 JSON-RPC 标准，如 -32601 方法不存在、-32602 参数无效
+      - 2025-06-18 版移除了 JSON-RPC 批量请求（batch）
+      - _meta 字段承载协议元数据，如进度 token、协议版本、追踪上下文
+      - 2026-07-28 版起 Server 不再主动发请求，只回响应和通知
+      - 消息必须 UTF-8 编码；stdio 传输下一行一条消息
+    followups:
+      - MCP 为什么不直接设计成一组 REST API？
+
+  - id: agent-tool-mcp-lifecycle
+    q: MCP Client 和 Server 从建立连接到完成一次工具调用，完整流程是怎样的？能力协商怎么做？
+    topics: [mcp]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      以 2025-11-25 及之前的版本为例：Client 先发 initialize 请求，带上协议版本、自身能力和 clientInfo；Server 回复选定的版本、自身能力、serverInfo 和可选的使用说明；
+      Client 再发 notifications/initialized，之后进入正常通信：用 tools/list 发现工具、tools/call 调用，期间可以有进度通知、取消和列表变更通知；
+      最后由传输层关闭连接结束会话。
+    key_points:
+      - Server 声明 tools、resources、prompts 等能力，Client 声明 elicitation 等
+      - Client 不支持 Server 选定的版本时应断开；HTTP 下后续请求带 MCP-Protocol-Version 头
+      - 工具变化时 Server 发 notifications/tools/list_changed，Client 重新拉取
+      - 只能使用双方都声明过的能力
+      - 2026-07-28 版去掉握手改为无状态，版本和能力随每个请求在 _meta 里携带
+    followups:
+      - 为什么新版要把 MCP 改成无状态？
+
+  - id: agent-tool-mcp-transports
+    q: MCP 有哪些传输方式？stdio 和 Streamable HTTP 各适合什么场景？为什么用 Streamable HTTP 取代早期的 HTTP+SSE？
+    topics: [mcp]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      stdio 由客户端把 Server 当子进程启动，经 stdin / stdout 收发换行分隔的 JSON-RPC 消息，适合本地工具，简单且只对这一个客户端开放；
+      Streamable HTTP 只暴露一个端点，每条消息一个 POST，服务端可回单个 JSON 或该请求专属的 SSE 流，适合远程和多用户部署。
+      早期 HTTP+SSE 要维持常驻 SSE 长连接加单独的 POST 端点，难以负载均衡和横向扩展，已被弃用。
+    key_points:
+      - stdio：stdout 只能写合法 MCP 消息，日志一律写 stderr
+      - HTTP 服务端必须校验 Origin 防 DNS 重绑定，本地运行只绑定 127.0.0.1
+      - 远程 Server 用 OAuth 授权；stdio 一般从环境变量拿凭证
+      - 2026-07-28 版去掉会话 ID、GET 流和 SSE 断点续传，每个请求自包含
+      - 可以自定义传输，但要保留 JSON-RPC 格式和消息语义
+    followups:
+      - 远程 MCP Server 部署在负载均衡后面要注意什么？
+
+  - id: agent-tool-mcp-client-features
+    q: MCP 里 Sampling、Elicitation、Roots 这些客户端能力是做什么的？为什么需要 Server 反过来向 Client 要东西？
+    topics: [mcp]
+    difficulty: 3
+    answer_brief: >-
+      它们让 Server 借用 Host 的能力：Sampling 请 Host 代为调用 LLM，Server 不必自带模型和密钥；
+      Elicitation 向用户索要补充信息（填表单，或跳转 URL 处理敏感操作）；Roots 告诉 Server 可操作的目录范围。
+      2026-07-28 版把这类反向请求改为多轮往返：Server 返回 input_required 结果，Client 补齐后重试；Roots、Sampling 同时被标为弃用。
+    key_points:
+      - Sampling 要求人在环中：用户能审核、修改提示和生成结果
+      - Elicitation 表单只支持扁平的基础类型字段，禁止用来索要密码、API Key
+      - 凭证、支付等敏感信息走 URL 模式，不经过 Client 和模型上下文
+      - 用户可以 accept / decline / cancel，Server 必须处理拒绝和取消
+      - 弃用后的替代：目录通过工具参数传，Server 直接对接模型 API
+    followups:
+      - 为什么敏感信息不能经过 MCP Client？
+
+  - id: agent-tool-mcp-auth
+    q: 远程 MCP Server 的鉴权是怎么设计的？讲讲客户端拿到 access token 的完整流程。
+    topics: [mcp, agent-safety]
+    difficulty: 4
+    answer_brief: >-
+      基于 OAuth 2.1、针对 HTTP 传输定义：MCP Server 是资源服务器，授权服务器签发 token，MCP Client 是 OAuth 客户端。
+      流程：无 token 请求收到 401 和 WWW-Authenticate 头；读受保护资源元数据（RFC 9728）找到授权服务器并拉取其元数据；
+      完成客户端注册；用 PKCE 走授权码流程并带 resource 参数；之后每个请求都带 Bearer token。
+    key_points:
+      - resource 参数（RFC 8707）把 token 绑定到具体 Server，Server 必须校验受众
+      - 禁止 token 透传：Server 不能接受或转发不是签发给自己的 token
+      - 客户端注册优先用 Client ID Metadata Documents，动态注册在新版已弃用
+      - 权限不足返回 403 和 insufficient_scope，客户端走 step-up 增量授权
+      - stdio 本地 Server 不走这套，从环境变量读取凭证
+    followups:
+      - 什么是 confused deputy 问题？代理型 MCP Server 怎么避免？
+
+  - id: agent-tool-mcp-2026-changes
+    q: MCP 在 2026-07-28 版规范里改成了「无状态」协议，具体改了什么？为什么这么改？
+    topics: [mcp]
+    difficulty: 4
+    answer_brief: >-
+      去掉 initialize 握手和 Mcp-Session-Id 会话，每个请求在 _meta 里自带协议版本和客户端能力，服务端能力改由 server/discover 查询；
+      Server 不再主动发请求，需要用户输入或 LLM 时返回 input_required 结果，由 Client 补齐后重试（MRTR）；
+      变更通知改走 subscriptions/listen。目的是让远程 Server 像普通 HTTP 服务一样无状态扩容，便于网关路由和缓存。
+    key_points:
+      - Tasks 从核心协议移到官方扩展，用 tasks/get 轮询结果
+      - Roots、Sampling、Logging 标为弃用，弃用期至少 12 个月
+      - HTTP 请求必须带 Mcp-Method、Mcp-Name 头，网关不解析 body 也能路由
+      - 列表类结果新增 ttlMs、cacheScope 缓存提示，建议 tools/list 稳定排序
+      - 兼容旧版：Client 先发 server/discover 探测，不认识再回退到 initialize
+    followups:
+      - 去掉会话以后，有状态的工具怎么实现？
+
+  - id: agent-tool-mcp-stateful-handles
+    q: MCP 新版去掉了协议层会话，像购物车、打开的浏览器页面、数据库事务这类有状态的工具该怎么实现？
+    topics: [mcp, tool-use]
+    difficulty: 3
+    answer_brief: >-
+      用显式句柄代替隐式会话：由一个「创建」工具在结果里返回不透明的句柄（如 basket_id），后续工具把它作为普通参数接收，
+      Server 用它查找存放在共享存储里的状态；模型负责在对话中把句柄带下去。这样任意一台无状态的 Server 实例都能处理请求。
+    key_points:
+      - 句柄只是名字不是凭证：每次调用都要校验调用者对该句柄的权限
+      - 用安全随机数生成，不用可猜的自增 ID，并设置过期时间
+      - 在创建工具的描述里写明过期策略，让模型知道何时需要重建
+      - 句柄失效时返回工具执行错误并说明原因，模型可以重新创建
+      - 状态按「用户 ID + 句柄」存储，用户 ID 取自已验证的 token
+    followups:
+      - 句柄被另一个用户拿到会发生什么？怎么防？
+
+  - id: agent-tool-mcp-error-model
+    q: MCP 工具调用失败时，应该返回 JSON-RPC 错误还是带 isError 的结果？两者有什么区别？
+    topics: [mcp, tool-use]
+    difficulty: 2
+    answer_brief: >-
+      分两类。协议错误指请求本身有问题，如未知工具、请求结构不合法、服务端内部故障，用标准 JSON-RPC error 返回，模型通常没法据此修正；
+      工具执行错误指工具跑了但失败了，如参数取值不合法、下游 API 报错、业务规则不满足，应作为正常结果返回并标记 isError 为 true，内容写清原因，
+      Client 应把它交给模型，让模型调整参数后重试。
+    key_points:
+      - 2025-11-25 版明确：输入校验错误应作为执行错误返回，便于模型自我纠正
+      - 错误文本要可操作，比如「出发日期必须晚于今天，今天是 8 月 8 日」
+      - 未知工具名这类协议错误用 -32602（Invalid params）等标准错误码
+      - Client 可以把协议错误也给模型，但恢复率低，更适合重试或告警
+      - 执行错误不要吞掉或只写日志，否则模型会以为调用成功了
+    followups:
+      - 下游 API 超时这种错误，应该交给模型处理还是由执行层自动重试？
+
+  - id: agent-tool-mcp-tool-annotations
+    q: MCP 工具的 annotations（readOnlyHint、destructiveHint 等）是什么？Host 应该怎么使用它们？
+    topics: [mcp, agent-safety]
+    difficulty: 3
+    answer_brief: >-
+      annotations 是 Server 对工具行为的自我声明：readOnlyHint 表示不修改环境，destructiveHint 表示可能做破坏性修改，
+      idempotentHint 表示相同参数重复调用没有额外影响，openWorldHint 表示会和外部开放世界交互（如网络搜索）。
+      Host 可以据此决定是否要用户确认、能否自动重试或并行。但它们只是提示，规范要求除非来自可信 Server，一律视为不可信。
+    key_points:
+      - 默认值偏保守：readOnly 默认 false，destructive 和 openWorld 默认 true
+      - destructive、idempotent 只在非只读工具上才有意义
+      - 典型用法：只读工具自动放行，破坏性工具弹确认，幂等工具才自动重试
+      - 恶意 Server 可以把删除操作标成只读，安全策略不能只靠注解
+      - 另有 title 字段，供界面展示人类可读的名称
+    followups:
+      - 对来自第三方的 MCP Server，你的审批策略怎么定？
+
+  - id: agent-tool-mcp-tool-results
+    q: MCP 工具的返回结果可以包含哪些内容？structuredContent 和 outputSchema 解决什么问题？
+    topics: [mcp, tool-use]
+    difficulty: 3
+    answer_brief: >-
+      非结构化结果放在 content 数组里，可以混合文本、图片、音频、资源链接（resource_link）和内嵌资源，每项还能带受众、优先级等注解；
+      结构化结果放在 structuredContent 字段，是一个 JSON 值。工具声明了 outputSchema 时，Server 必须返回符合它的结构化结果，
+      Client 应当校验，这样下游代码能可靠解析，模型也更清楚每个字段的含义。
+    key_points:
+      - 兼容旧客户端：返回 structuredContent 时，也在文本内容里放一份序列化 JSON
+      - structuredContent 是 Server 产出的数据，和模型侧的 Structured Outputs 不是一回事
+      - 大文件用 resource_link 只返回 URI，按需再读，避免撑爆上下文
+      - 注解里的 audience 可区分给用户看还是给模型看的内容
+      - isError 标记执行失败，内容写清失败原因
+    followups:
+      - 工具返回了一张图片，Host 应该怎么把它交给模型？
+
+  - id: agent-tool-mcp-long-running
+    q: MCP 工具要执行很久（几分钟到几小时）时，协议提供了哪些机制？客户端该怎么处理？
+    topics: [mcp, tool-use]
+    difficulty: 3
+    answer_brief: >-
+      稍长的调用用进度通知：请求带 progressToken，Server 执行中发 notifications/progress，Client 也可随时取消。
+      真正的长任务用 Tasks 扩展：Server 不阻塞，直接返回带 taskId 的任务句柄，Client 用 tasks/get 轮询；
+      需要用户输入时任务进入 input_required，Client 通过 tasks/update 补充，完成后从结果里取最终输出。
+    key_points:
+      - 任务状态：working、input_required、completed、failed、cancelled
+      - 句柄带 ttlMs 和 pollIntervalMs；Client 要持久化 taskId，断线重启后继续轮询
+      - 取消是协作式的：发了 tasks/cancel，Server 也不一定能立即停下
+      - Client 要设超时，收到进度可以延长，但要有总上限
+      - Tasks 在 2025-11-25 版是实验特性，2026-07-28 版移到官方扩展，需双方声明支持
+    followups:
+      - 包装一个本身就是异步 job 的内部 API，怎么映射到 MCP Tasks？
+
+  - id: agent-tool-mcp-code-mode
+    q: 工具多了以后，有人提出不让模型逐个调用 MCP 工具，而是把 MCP Server 暴露成代码 API、让模型写代码去调。这解决了什么问题？
+    topics: [mcp, tool-use, context-engineering]
+    difficulty: 3
+    answer_brief: >-
+      直接调用有两笔上下文开销：所有工具定义要预先塞进上下文；每次调用的中间结果都要经过模型，比如把一份长文档从一个工具搬到另一个工具。
+      改成代码后，工具以文件或模块的形式按需查看，模型写一段代码在沙箱里组合调用、过滤和聚合数据，只把最终结果返回上下文。
+      Anthropic 的示例里，一个工作流的 token 从约 15 万降到约 2000。
+    key_points:
+      - 渐进式披露：浏览目录或搜索后只读需要的工具定义
+      - 循环、条件、重试写在代码里，省掉多轮模型推理
+      - 敏感数据可以留在执行环境里，不进入模型上下文
+      - Cloudflare 称之为 Code Mode；Anthropic 提供 programmatic tool calling
+      - 代价：需要安全沙箱、资源限制和监控，单个高风险操作的审批粒度变粗
+    followups:
+      - 只需要调一两次工具的简单任务，还值得这样做吗？
+
+  # ---------- MCP：工程落地与安全 ----------
+  - id: agent-tool-mcp-server-build
+    q: 如果让你把公司内部的一个业务系统封装成 MCP Server，给各种 Agent 使用，你会怎么设计和落地？
+    type: system-design
+    topics: [mcp, tool-use]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      先从 Agent 的真实任务出发挑出少量高层工具，而不是把内部接口全部暴露。用官方 SDK 实现，比如 Python 的 FastMCP，用类型注解和 docstring 生成 schema 与描述；
+      本地试用走 stdio，给多个团队共享就部署成 Streamable HTTP 远程服务，接入公司 OAuth，按调用者权限过滤可见工具和数据。
+      上线前用 MCP Inspector 调试，并用评测集验证 Agent 能否正确使用。
+    key_points:
+      - 标注 readOnlyHint、destructiveHint 等，便于 Host 决定是否审批
+      - 写操作做幂等、限流和审计，所有输入在 Server 端重新校验
+      - 返回 structuredContent 加 outputSchema，并控制返回体积
+      - 失败用 isError 返回可读原因，方便模型自我纠正
+      - 工具名和参数变更要向后兼容，变更后发 list_changed 通知
+    followups:
+      - 用户身份怎么从 MCP 请求一路传到内部的后端服务？
+
+  - id: agent-tool-mcp-gateway
+    q: 公司里的 MCP Server 越来越多、各团队的 Agent 都要接，为什么需要一个 MCP 网关或注册中心？它应该负责什么？
+    type: system-design
+    topics: [mcp, agent-safety]
+    difficulty: 3
+    answer_brief: >-
+      直连模式下，每个 Agent 都要单独配置、鉴权和审计每个 Server，同名工具冲突、权限失控、来源不明的 Server 都难管理。
+      网关集中做这些横切能力：统一认证并把用户身份换成各 Server 的凭证，按租户和角色过滤可见工具，给工具名加命名空间前缀，
+      做限流、超时、审计和监控；注册中心登记 Server 的元数据、版本和负责人，只允许审核过的 Server 接入。
+    key_points:
+      - 工具聚合：多个 Server 的工具合成一个列表，按前缀消除同名冲突
+      - 凭证托管：下游 token 由网关保存和注入，不暴露给模型和客户端
+      - 策略执行：按工具风险等级配置自动放行、需审批或禁用
+      - 定义变更检测：工具描述被悄悄修改时告警，防 rug pull
+      - 官方 MCP Registry 用 server.json 描述 Server，但不负责安全审查
+    followups:
+      - 网关统一鉴权以后，下游 MCP Server 还需要自己校验权限吗？
+
+  - id: agent-tool-mcp-debug
+    q: MCP Server 已经配好了，但模型就是不调用它的工具，或者一调就失败，你会怎么排查？
+    topics: [mcp, tool-use]
+    difficulty: 2
+    answer_brief: >-
+      先确认链路，再看模型。用 MCP Inspector 单独连 Server，看能否连上、tools/list 是否正常、手动 tools/call 能否成功；
+      stdio 场景重点查有没有日志或 print 写进 stdout 污染协议、启动命令和环境变量是否正确；HTTP 场景查鉴权、Origin 校验和超时。
+      链路正常但模型不调用，多半是描述不清、和其他工具重名或相似、工具太多被淹没，或 schema 用了模型提供方不支持的写法。
+    key_points:
+      - 看 Host 日志：工具是否被加载，是否因 schema 不合法被过滤
+      - 对比模型实际收到的工具定义，确认描述和参数没被截断或改写
+      - 调用失败时区分是协议错误还是 isError 结果，读具体错误内容
+      - 慢工具：检查客户端超时，必要时改用进度通知或异步任务
+      - 用一条直接点名该工具的提示词测试，区分是可见性问题还是选择问题
+    followups:
+      - 本地 stdio Server 在终端里能跑，接到客户端就失败，常见原因有哪些？
+
+  - id: agent-tool-mcp-security
+    q: 接入第三方 MCP Server 会带来哪些特有的安全风险？怎么防？
+    topics: [mcp, agent-safety]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      典型风险：工具投毒，在工具描述里藏指令，诱导模型读私密文件或外传数据；rug pull，Server 通过审核后悄悄改工具定义；
+      工具结果里夹带的间接提示注入；同名工具遮蔽别的 Server 的工具；token 透传和 confused deputy；本地 Server 本质上是在你机器上执行任意代码。
+      防御从「不信任 Server」出发：来源审核和版本锁定、定义变更告警、沙箱和最小权限运行、敏感操作人工确认。
+    key_points:
+      - 工具描述和注解都是不可信输入，安装前要人工审阅
+      - 本地 Server：执行前展示完整启动命令，放进容器或沙箱限制文件和网络
+      - 远程 Server：校验 token 受众、禁止透传，客户端做 SSRF 防护
+      - 多 Server 时给工具名加命名空间，防止同名劫持
+      - 控制 Server 之间的数据流，防止一个 Server 的数据被另一个带出去
+    followups:
+      - 为什么工具描述里的注入比网页内容里的注入更危险？
+
+  # ---------- A2A ----------
+  - id: agent-tool-a2a-agent-card
+    q: A2A 协议里的 Agent Card 一般包含哪些信息？客户端怎么发现远程 Agent、怎么完成鉴权？
+    topics: [multi-agent, agent]
+    difficulty: 3
+    answer_brief: >-
+      Agent Card 是远程 Agent 的「名片」，一个 JSON 文档：名称、描述、提供方、版本、服务端点和支持的协议绑定、能力开关（是否支持流式和推送）、
+      默认输入输出类型、技能列表，以及鉴权方案。客户端可以从约定的 /.well-known/agent-card.json 获取，也可以查注册中心或直接配置；
+      再按卡片声明的 securitySchemes 在协议之外取得凭证，每次请求放在 HTTP 头里携带。
+    key_points:
+      - skills 描述能做什么，带示例和输入输出类型，供客户端或编排 Agent 挑选
+      - 鉴权方案沿用 OpenAPI 风格：API Key、HTTP Bearer、OAuth2、OIDC、mTLS
+      - 敏感信息可放在认证后才能获取的扩展 Agent Card 里
+      - Agent Card 可以用 JWS 签名，客户端校验来源和完整性
+      - 协议绑定：JSON-RPC 2.0、gRPC、HTTP+JSON/REST，1.0 稳定版于 2026 年发布
+    followups:
+      - 公开的 Agent Card 会不会泄露内部信息？怎么控制？
+
+  - id: agent-tool-a2a-task-lifecycle
+    q: A2A 里一个任务从提交到完成会经历哪些状态？对于长任务，客户端有哪些方式获取进度？
+    topics: [multi-agent, agent]
+    difficulty: 3
+    answer_brief: >-
+      Task 从 submitted 进入 working，中途可能停在 input-required（要用户补充信息）或 auth-required（要额外授权），客户端在同一任务上继续发消息；
+      最终进入 completed、failed、canceled、rejected 之一，终态不再变化。获取进度有三种方式：轮询 GetTask；
+      SSE 流式接收状态和产出物增量，断线可重新订阅；注册 Webhook，由服务方在状态变化时推送。
+    key_points:
+      - 流式、推送需在 Agent Card 的 capabilities 里声明 streaming / pushNotifications
+      - 流式事件分 TaskStatusUpdateEvent 和 TaskArtifactUpdateEvent，必须按序送达
+      - 方法名：1.0 版为 SendMessage、GetTask 等，0.x 版为 message/send、tasks/get
+      - 推送适合服务间集成、客户端不保持连接的场景，回调要校验来源
+      - 结果放在 Artifact 里，Message 主要用于沟通和补充信息
+    followups:
+      - Webhook 推送丢了或者重复了，客户端怎么处理？

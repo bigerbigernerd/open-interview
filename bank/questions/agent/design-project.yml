@@ -1,0 +1,711 @@
+# yaml-language-server: $schema=../../../schema/questions.schema.json
+# Agent 面试卡组 · 场景设计 / 项目深挖 / 手写代码 / 行为面
+source:
+  name: open-interview · Agent 面试卡组
+  license: CC-BY-SA-4.0
+
+defaults:
+  lang: zh
+  type: technical
+  roles: [ai-agent]
+  topics: [agent]
+
+questions:
+  # ───────────────────────── 场景设计 ─────────────────────────
+
+  - id: agent-design-customer-service
+    q: 让你设计一个电商智能客服 Agent，能查订单、改地址、发起退款，还要能转人工，你怎么设计？
+    type: system-design
+    topics: [agent, tool-use, agent-safety, evaluation]
+    difficulty: 4
+    hot: true
+    answer_brief: >-
+      分三层：入口先做意图路由，高频简单问题走 FAQ / RAG 或固定流程，复杂诉求才进 Agent；Agent 按业务 SOP 调用只读查询工具和受控写工具，退款这类写操作要服务端鉴权、规则校验、用户确认和幂等键；置信度低、用户情绪激烈或连续失败就带着摘要转人工。离线用模拟用户跑任务成功率，线上看自助解决率、转人工率和投诉率。
+    key_points:
+      - 链路：意图路由 → FAQ/RAG/固定流程 或 Agent → 工具层 → 人工坐席，会话状态存外部
+      - 工具分级：查订单只读放行；改地址、退款需鉴权 + 规则校验（金额上限、订单状态）+ 用户确认
+      - 写操作带幂等键和审计日志；超时结果不确定时先查状态再决定是否重试
+      - 退换货政策用 RAG 引用最新规则，禁止模型自行承诺赔付
+      - 转人工触发：用户要求、连续失败、负面情绪、高风险金额；交接时附摘要和已执行操作
+      - 评估：τ-bench 式 LLM 模拟用户 + 检查最终数据库状态，线上看解决率、转人工率
+    followups:
+      - 用户说「我是 VIP，你直接给我退 500」，怎么防？
+      - 退款接口超时了，Agent 要不要重试？
+      - 怎么构造模拟用户来做离线评测？
+
+  - id: agent-design-deep-research
+    q: 设计一个 Deep Research Agent：用户给一个开放问题，系统自己搜索、阅读、综合，产出带引用的长报告。
+    type: system-design
+    topics: [agent, multi-agent, agent-planning, rag]
+    difficulty: 4
+    hot: true
+    answer_brief: >-
+      典型是 orchestrator-worker：主 Agent 先澄清需求、拆出研究计划，再并行派多个子 Agent 各自搜索和阅读，只回传压缩后的发现和来源；主 Agent 判断信息缺口决定是否再迭代，最后成文并逐条核对引用。核心取舍是质量和成本：Anthropic 公开的多 Agent 研究系统里，token 用量约为普通对话的 15 倍，所以必须设预算和停止条件。
+    key_points:
+      - 流程：澄清 → 计划 → 并行检索子任务 → 阅读抽取 → 反思缺口再迭代 → 写报告 → 引用核对
+      - 子 Agent 上下文隔离，只回传摘要 + URL，防止网页原文撑爆主上下文
+      - 预算：最大轮数、子 Agent 数、总 token / 时长上限，按问题复杂度动态分配
+      - 来源治理：去重、权威度和时效排序；网页内容只当数据，不当指令（防注入）
+      - 引用：每个论断绑定来源片段，生成后核验原文是否真的支持
+      - 评估：LLM judge 按 rubric 打分（事实、引用准确、覆盖度、来源质量）+ 人工抽检
+    followups:
+      - 多个子 Agent 重复搜同一内容怎么办？
+      - 长报告前后矛盾怎么避免？
+      - 怎么判断「已经研究够了」可以停？
+
+  - id: agent-design-coding-agent
+    q: 如果让你从零设计一个类似 Claude Code / Codex CLI 的编程 Agent，主循环和工具集怎么设计？
+    type: system-design
+    topics: [agent, tool-use, context-engineering]
+    difficulty: 4
+    hot: true
+    answer_brief: >-
+      核心是一个简单的 tool-calling 循环：模型读任务和项目说明，调用工具探索代码、修改、运行测试，根据结果决定下一步，直到不再调用工具。工具集要少而精：读文件、按模式找文件、全文搜索、精确编辑、执行 shell、待办列表和子 Agent；通用能力靠 shell 和测试反馈兜底，而不是堆几十个专用工具。
+    key_points:
+      - 主循环：组装上下文 → 模型输出 → 执行工具 → 结果回填，直到无工具调用或触达上限
+      - 编辑用精确字符串替换或 patch，要求旧片段唯一；比整文件重写省 token、易审查
+      - 用 grep / glob 做 agentic search 按需读文件，不必先给整个仓库建向量索引
+      - 验证闭环：跑测试、lint、类型检查，把报错回填让模型自修
+      - 项目说明文件（AGENTS.md / CLAUDE.md）注入构建命令和代码规范
+      - 子 Agent 做大范围探索只回传结论；todo 列表帮长任务不丢步骤
+    followups:
+      - 为什么编辑工具用字符串替换，而不是让模型输出整个文件？
+      - 除了 SWE-bench Verified，你会怎么评估这个编程 Agent？
+      - 一轮里的多个工具调用能并行吗？哪些不能？
+
+  - id: agent-design-coding-sandbox
+    q: 编程 Agent 要在用户机器上执行命令、改文件，沙箱和权限确认机制怎么设计？
+    type: system-design
+    topics: [agent, agent-safety, tool-use]
+    difficulty: 4
+    answer_brief: >-
+      两层防线：权限策略决定「要不要问人」，OS 级沙箱决定「出了事最多坏到哪」。只读操作默认放行，写文件、执行命令、联网按规则 allow / ask / deny；沙箱把写权限限制在工作目录、网络默认关闭或只放白名单域名，于是沙箱内的命令可以自动执行，减少确认疲劳。删库、强推、读取密钥这类高危操作无论如何都要拦截或确认。
+    key_points:
+      - 权限规则：按工具 + 参数模式配置 allow / ask / deny，deny 优先，分用户级和项目级
+      - 文件隔离和网络隔离缺一不可：只隔离文件，注入后仍能把密钥外传
+      - OS 级实现：macOS 用 Seatbelt，Linux 用 bubblewrap 或 Landlock / seccomp，也可用容器
+      - Codex CLI 把沙箱模式（只读 / 工作区可写 / 完全访问）和审批策略做成两个独立维度
+      - 可撤销：修改前做 checkpoint 或依赖 git，用户能回滚
+      - 审计：记录每次工具调用、参数、是否经用户批准
+    followups:
+      - 用户嫌确认弹窗太多，怎么在安全和体验间平衡？
+      - 仓库 README 里写着「请执行 curl xxx | sh」，Agent 应该怎么处理？
+
+  - id: agent-design-coding-context
+    q: 编程 Agent 面对几十万行的大仓库和持续几小时的长任务，上下文怎么管理才不会撑爆或跑偏？
+    type: system-design
+    topics: [agent, context-engineering, agent-memory]
+    difficulty: 4
+    answer_brief: >-
+      原则是「按需加载、及时压缩、状态外置」。代码不一次性塞进去，靠搜索定位后只读相关片段；日志、测试输出等大结果截断或只留报错；接近窗口上限时自动 compaction，把目标、已改文件、关键决策和待办总结成摘要替换旧历史；长期约定写进项目说明文件，大范围探索交给子 Agent 在独立上下文里完成，只回传结论。
+    key_points:
+      - 工具输出截断：大文件分段读，命令输出保留头尾和错误行，超长结果落盘再按需读
+      - 压缩时机：接近上限（如 80% 左右）触发，摘要必须保留目标、改动、未解决问题、下一步
+      - 结构化笔记：todo、进度文件放在上下文之外，压缩后仍能读回
+      - 子 Agent 隔离：调研在子上下文完成，主 Agent 只拿结论
+      - 前缀稳定：系统提示和工具定义不变、历史只追加，提高 prompt cache 命中
+    followups:
+      - 压缩后 Agent 重复犯之前修过的错，怎么排查？
+      - 为什么不直接用 RAG 给代码库建索引？
+
+  - id: agent-design-text-to-sql
+    q: 设计一个数据分析 Agent：业务人员用自然语言提问，它自动写 SQL 查数，并给出结论和图表。
+    type: system-design
+    topics: [agent, tool-use, rag, agent-safety]
+    difficulty: 4
+    hot: true
+    answer_brief: >-
+      难点不在 SQL 语法，而在「查对表、用对口径」。先做 schema linking：从元数据和语义层检索相关表、字段说明、指标定义和相似问题的历史 SQL，再让模型生成 SQL；经静态校验后在只读账号上执行，报错或结果异常就把错误回填让模型自修；最后基于结果分析和画图。问题有歧义时先追问，不要猜。
+    key_points:
+      - 语义层：GMV、活跃用户等指标口径由数据团队定义，模型引用而非自己发明
+      - Schema linking：表多时先检索相关表、列和样例值，避免把全部 schema 塞进上下文
+      - 安全：只读账号、解析 AST 只放行 SELECT、强制 LIMIT 和超时、行级权限
+      - 自修复：执行报错、空结果、数值异常时带错误信息重试，限制次数
+      - 评估：标准问题集比对执行结果（execution accuracy）；公开基准有 Spider、BIRD
+      - 输出时展示 SQL 和口径说明，方便用户核对
+    followups:
+      - 同一个问题两次生成的 SQL 不同、结果也不同，怎么办？
+      - 上千张表的数仓里怎么做 schema linking？
+
+  - id: agent-design-enterprise-kb
+    q: 设计一个企业内部知识库助手，要求按员工权限回答、给出引用来源，文档更新后能尽快生效。
+    type: system-design
+    topics: [agent, rag, agent-safety, evaluation]
+    difficulty: 4
+    answer_brief: >-
+      离线侧用连接器同步各数据源（文档系统、Wiki、工单），解析切块时把来源、版本和 ACL 一起写进元数据；在线侧按用户身份在检索阶段过滤权限，而不是生成后再删，混合检索加重排后生成带引用的答案，证据不足就明确说不知道。更新靠增量同步：按文档 ID 覆盖重建、删除旧版本向量，权限变更单独同步。
+    key_points:
+      - 权限：用户组和文档 ACL 存元数据，检索时 pre-filter；缓存 key 也要带权限维度
+      - 增量同步：监听变更事件或定时 diff，按 doc_id 重建 chunk 并删除失效向量
+      - 检索：BM25 + 向量混合召回 → rerank，chunk 保留标题层级上下文
+      - 引用：每段答案标注来源文档和位置，前端可跳转原文
+      - 拒答：检索分数低或证据冲突时说明不确定，并指向负责人或原文档
+      - 评估：检索 Recall@k、答案忠实度、引用准确率，外加越权访问测试集
+    followups:
+      - 员工调岗后，权限多久生效？怎么保证？
+      - 两份文档说法冲突时怎么回答？
+
+  - id: agent-design-browser-agent
+    q: 设计一个浏览器自动化 Agent，能按用户指令在网页上完成订票、填表这类多步操作，你会怎么做？
+    type: system-design
+    topics: [agent, multimodal, tool-use, agent-safety]
+    difficulty: 4
+    answer_brief: >-
+      用 Playwright 一类工具控制真实浏览器，每一步把页面状态交给模型：以可访问性树或精简 DOM（给可交互元素编号）为主，截图为辅处理视觉布局；模型输出点击、输入、选择、滚动、跳转等原子动作，执行后再观察。关键是状态表示精简、动作可校验、失败可重试；支付、提交、发消息等不可逆操作必须停下来让用户确认，网页内容一律视为不可信数据。
+    key_points:
+      - 观察：a11y tree / 过滤后的 DOM + 元素 ID；截图上叠加编号框（Set-of-Mark）辅助定位
+      - 动作空间：click、type、select、scroll、goto、wait，参数引用元素 ID，可校验
+      - 鲁棒性：等待页面稳定、元素失效后重新定位、处理弹窗、限制总步数
+      - 安全：网页里的「忽略之前的指令」当作注入；不可逆操作前人工确认
+      - 凭证：复用用户已登录的会话，不让模型接触明文密码
+      - 评估：参考 WebArena、Mind2Web，按任务最终状态判定成功
+    followups:
+      - 纯截图坐标方案和 DOM 方案怎么选？
+      - 遇到验证码怎么办？
+
+  - id: agent-design-meeting-assistant
+    q: 设计一个会议 / 办公助手：自动生成会议纪要、提取待办，还能帮用户约会议、发跟进邮件。
+    type: system-design
+    topics: [agent, tool-use, agent-memory, multimodal]
+    difficulty: 3
+    answer_brief: >-
+      拆成「理解」和「行动」两半。理解侧：流式 ASR 加说话人分离得到带时间戳的转写，长会议分段摘要再合并，抽取决议、待办（负责人、截止时间）和未决问题，每条都能回溯到原话；行动侧：通过日历、邮件、任务系统 API 执行，但一律先生成草稿让用户确认再发。另外要处理录音告知与同意、数据保留期限和租户隔离。
+    key_points:
+      - 转写：ASR + 说话人分离，用议程和参会人名单做热词，提高专有名词准确率
+      - 长会议：按议题或时间分段 map-reduce 摘要，待办抽取用结构化输出
+      - 每条纪要和待办附时间戳引用，方便核对、降低幻觉
+      - 行动：约会前先查各方忙闲；发邮件、建日程都先出草稿再确认
+      - 记忆：跨会议跟踪待办状态，下次开会前自动汇总进展
+      - 隐私：录音告知与同意、敏感会议不处理、按策略删除
+    followups:
+      - 说话人分离出错导致待办负责人张冠李戴，怎么办？
+      - 怎么评估纪要质量？
+
+  - id: agent-design-multi-tenant-platform
+    q: 设计一个多租户 Agent 平台，让企业客户自己配置 Agent（提示词、知识库、工具），你重点考虑什么？
+    type: system-design
+    topics: [agent, distributed-systems, agent-safety, high-availability]
+    difficulty: 5
+    answer_brief: >-
+      分控制面和数据面。控制面负责租户管理、Agent 配置版本化（模型 + 提示词 + 工具 + 知识库打包成一个可发布版本）、灰度和回滚；数据面无状态地跑 Agent 循环，状态全部外置。重中之重是隔离：数据隔离（知识库按租户分命名空间、密钥分离）、执行隔离（代码类工具跑在每会话沙箱）、凭证隔离（租户的密钥进 vault），再加上配额、计量计费和吵闹邻居治理。
+    key_points:
+      - 配置即版本：Agent 定义快照化，会话绑定版本，支持灰度、A/B、一键回滚
+      - 租户 ID 贯穿检索过滤、缓存 key、日志和 trace；向量库按租户分 namespace / collection
+      - 执行隔离：容器、gVisor 或 Firecracker 类 microVM，限 CPU、内存、网络出口
+      - 配额：按租户 RPM / TPM / 日预算限流加公平排队，防止单租户打满上游模型配额
+      - 计量：按租户、Agent、模型统计 token、工具调用和存储，用于计费和成本归因
+      - 租户自定义 HTTP 工具要防 SSRF：出口代理、禁内网地址
+    followups:
+      - 大客户要求私有化部署，架构怎么改？
+      - 某个租户的流量把共享模型配额打满了，怎么办？
+
+  - id: agent-design-durable-long-task
+    q: Agent 任务可能跑几十分钟、调几十次工具，中途服务会重启、还要等人工审批，执行引擎怎么设计？
+    type: system-design
+    topics: [agent, distributed-systems, high-availability, agent-planning]
+    difficulty: 4
+    answer_brief: >-
+      把 Agent 运行当成可恢复的工作流：每一步（模型调用、工具调用、人工审批）都作为事件持久化，形成 checkpoint；worker 无状态，从队列领任务，崩溃后由其他 worker 从最后一个 checkpoint 继续。已完成步骤的结果直接从日志读取而不是重新执行，写类工具必须幂等；人工审批就是一个持久化的挂起状态，收到外部信号后恢复，并设超时策略。
+    key_points:
+      - 状态外置：消息历史、计划、工具结果按步写数据库，类似事件溯源
+      - 恢复：重放已记录的结果、跳过已完成步骤，只重做未完成的那一步
+      - 幂等：写工具带 idempotency key；结果不确定时先查询再决定
+      - 人工介入：中断点持久化，批准 / 驳回作为信号继续，超时自动取消或升级
+      - 现成方案：Temporal 类 durable execution，或 LangGraph checkpointer + interrupt
+      - 前端按任务 ID 异步订阅进度，不依赖长连接保活
+    followups:
+      - 模型输出不确定，恢复时会不会走出不同的路径？怎么处理？
+      - 用户中途改了需求，正在跑的任务怎么办？
+
+  - id: agent-design-voice-agent
+    q: 设计一个实时语音客服 Agent，要求低延迟、用户能随时打断，链路怎么设计？
+    type: system-design
+    topics: [agent, multimodal, inference]
+    difficulty: 4
+    answer_brief: >-
+      主流是级联：VAD 检测说话 → 流式 ASR → LLM 流式生成 → 流式 TTS 边合成边播放，用 WebRTC 传输；降延迟靠全链路流式、首句尽早送 TTS、高频问题走小模型或缓存。打断时一检测到用户开口就停止播放、取消生成，并把上下文里助手的话截断到实际播出的部分。端到端语音模型更自然、延迟更低，但可控性和工具调用稳定性较弱。
+    key_points:
+      - 延迟拆解：端点等待 + ASR 尾延迟 + LLM 首 token + TTS 首包 + 网络，逐段压缩
+      - 端点检测：静音阈值短了会抢话、长了显得迟钝；可加语义判断用户是否说完
+      - 打断：取消生成和 TTS、清空播放缓冲，历史只记录已播出的文本
+      - 工具调用耗时长时，先播「我帮您查一下」之类的填充语
+      - 级联方便插入规则、日志和工具；speech-to-speech 更自然但难审计
+      - 评估：首响延迟 P50 / P95、误打断率、ASR 错误率、任务完成率
+    followups:
+      - 背景噪音导致频繁误打断，怎么处理？
+      - 级联方案和端到端语音模型怎么选？
+
+  - id: agent-design-rca-agent
+    q: 设计一个线上故障诊断（根因分析）Agent：告警触发后自动排查，给出根因和处置建议。
+    type: system-design
+    topics: [agent, tool-use, agent-planning, evaluation]
+    difficulty: 4
+    answer_brief: >-
+      告警进来先收集上下文：受影响服务、上下游拓扑、近期变更和发布、相关指标、日志和链路；然后让模型提出几个根因假设，用只读查询工具逐个验证（指标拐点、错误日志、依赖状态），按证据强弱给出 Top-k 根因和处置建议。处置默认只给建议，或走预定义 runbook 并经人工确认，不让模型自由执行写操作。
+    key_points:
+      - 工具全部只读：查指标、日志、trace、变更记录、服务拓扑
+      - 先验知识：历史故障复盘和 runbook 用 RAG 检索，作为假设来源
+      - 假设-验证循环，结论必须附证据（具体指标、日志行），不能只给猜测
+      - 降噪：告警聚合、时间窗对齐，海量日志先做模板聚类再给模型
+      - 评估：历史故障回放，看 Top-1 / Top-3 根因命中率和平均定位时长
+      - 回滚、扩容等处置经人工确认后执行，全程审计
+    followups:
+      - 多个告警同时爆发，怎么区分根因和被波及的服务？
+      - 故障回放评测集怎么构造？
+
+  # ───────────────────────── 项目深挖 ─────────────────────────
+
+  - id: agent-design-proj-intro
+    q: 用 3 分钟介绍一下你做过的最有代表性的 Agent 项目。
+    type: project
+    topics: [agent]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      按「背景目标 → 方案架构 → 我负责的部分 → 关键难点与取舍 → 量化结果 → 反思」讲。开头一句话说清业务问题和为什么需要 Agent；中间口述一张架构图，讲主链路（入口、编排、工具、检索 / 记忆、评估）；重点放在你亲手解决的 1-2 个难点；最后用带基线的数字收尾。
+    key_points:
+      - 结论先行：解决了什么问题、服务多少用户、核心指标提升多少
+      - 划清个人边界：哪些是你设计实现的，哪些是团队已有的
+      - 难点要具体：某类 badcase、某个工具不稳定、某次延迟问题，以及怎么定位
+      - 数字带口径：评测集多大、和谁比、离线还是线上
+      - 主动埋一个你最熟的深挖点，引导面试官往那里问
+    followups:
+      - 这个项目里你个人最大的贡献是什么？
+      - 如果现在重做，你会改哪里？
+
+  - id: agent-design-proj-eval
+    q: 你这个 Agent 的效果是怎么评估的？怎么证明你的改动真的有用？
+    type: project
+    topics: [agent, evaluation]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      好回答讲清三层：离线评测集（来源、规模、怎么标注、覆盖哪些场景和难度）；指标（任务成功率为主，辅以工具调用正确率、步数、延迟、成本，必要时看轨迹）；判定方式（能用规则或执行结果判就不用模型判，LLM-as-judge 要先和人工标注对齐）。再讲线上：灰度或 A/B 看业务指标和用户反馈，并说明每次改动都先过回归集。
+    key_points:
+      - 评测集：线上日志抽样 + 历史 badcase + 构造的边界和对抗样本，按场景分层
+      - 成功判定优先用环境最终状态或执行结果，而不是模型主观打分
+      - LLM judge：用人工标注子集测一致率，固定 judge 模型和 rubric 版本
+      - Agent 有随机性：同一题跑多次看均值和稳定性（如 pass^k：k 次全部成功的概率）
+      - 回归：改 prompt / 模型前后同集对比，按场景检查有没有跷跷板
+      - 线上：灰度 / A/B，看解决率、转人工率、留存，避免只报离线数字
+    followups:
+      - 评测集多大？怎么保证它代表线上分布？
+      - LLM judge 和人工打分不一致时以谁为准？
+
+  - id: agent-design-proj-why-agent
+    q: 你的项目为什么要用 Agent，而不是写一个固定的 workflow？反过来，哪些部分你刻意没用 Agent？
+    type: project
+    topics: [agent, agent-planning]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      拿任务特点说话：步骤和分支能否提前穷举、输入是否开放、出错代价多大。路径固定、对稳定性和延迟要求高的部分用 workflow 或规则；只有路径依赖中间结果、长尾情况多到写不完分支时，才在那一段交给 Agent 自主决策。最好讲出实际的混合方案，以及先做了 workflow 基线、Agent 在哪些指标上胜出、付出了多少延迟和成本。
+    key_points:
+      - 判断维度：路径可预知性、长尾占比、出错代价、延迟 / 成本预算、可观测要求
+      - Workflow 可控、可测、便宜、快；Agent 灵活，适合开放式任务
+      - 常见答案是混合：外层 workflow 控主流程，局部节点（检索策略、排查）用 Agent
+      - 用数据说话：同一评测集上 workflow 基线 vs Agent 的成功率、延迟、成本
+      - 讲清对 Agent 的约束：步数上限、工具白名单、关键节点人工确认
+    followups:
+      - Agent 版本比 workflow 慢了 3 倍，你怎么说服业务方？
+      - 有没有哪个环节你从 Agent 退回成了 workflow？
+
+  - id: agent-design-proj-hardest-bug
+    q: 你在 Agent 项目里遇到过最难排查的问题是什么？怎么定位和解决的？
+    type: project
+    topics: [agent, evaluation]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      用 STAR 讲一个真实具体的 case：现象（哪个指标异常、影响多大）→ 定位（看 trace，把问题归到检索、提示词、模型、工具还是数据；怎么复现、怎么排除其他假设）→ 根因 → 修复与取舍 → 验证（回归集和线上指标）→ 沉淀（加进评测集、加监控）。好例子要体现 LLM 系统特有的难点：非确定性、偶发、依赖上下文。
+    key_points:
+      - 选 Agent 特有问题：工具结果被截断导致误判、多轮后忘记约束、模型升级后格式变化、循环调用
+      - 复现手段：固定输入回放 trace、降低 temperature、多次采样统计复现率
+      - 归因手段：逐段替换（换模型、换检索结果、删某段提示）做对照实验
+      - 修复要讲取舍，比如加校验层多了延迟，怎么权衡
+      - 收尾：加回归用例和线上告警，防止复发
+    followups:
+      - 这个问题为什么上线前没测出来？
+      - 如果只有 5% 的复现率，你怎么排查？
+
+  - id: agent-design-proj-cost-latency
+    q: 你的 Agent 一次任务的成本和延迟大概是多少？做过哪些优化，各自省了多少？
+    type: project
+    topics: [agent, inference, context-engineering]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      先报基线：单任务平均调用模型几次、输入输出 token、P50 / P95 端到端延迟、单次成本；再按收益排序讲优化：模型分级路由、prompt cache、并行工具调用、压缩工具输出和历史、减少无效步数、缓存可复用结果、流式输出降低感知延迟。每项都讲清怎么测、省了多少、效果有没有损失。
+    key_points:
+      - 先拆账：时间花在模型、工具还是排队；token 花在系统提示、历史还是工具结果
+      - 路由：分类、抽取等简单步骤用小模型，复杂规划留给大模型
+      - Prompt cache：系统提示和工具定义放前面不变，历史只追加；命中部分更便宜、首 token 更快
+      - 并行无依赖的工具调用；减少串行轮次通常比单步提速收益更大
+      - 截断 / 摘要工具输出，限制最大步数，防止循环空转
+      - 护栏：优化前后在同一评测集上对比成功率
+    followups:
+      - 用户反馈慢，但你的 P50 看起来正常，怎么排查？
+      - 换小模型后效果掉了 2 个点，要不要上？
+
+  - id: agent-design-proj-hallucination
+    q: 你的项目里怎么防幻觉？幻觉率降了多少，是怎么量化的？
+    type: project
+    topics: [agent, rag, evaluation]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      先定义你业务里的幻觉（编造事实、编造工具结果、引用错误、越权承诺），再讲分层手段：事实来源化（RAG / 工具查询，要求基于证据回答并引用）、生成约束（证据不足就拒答、结构化输出）、生成后校验（引用核对、规则校验、关键字段对照数据库）、高风险输出人工复核。最后给量化：标注集上的幻觉率或忠实度前后对比。
+    key_points:
+      - 分类：事实错误、与证据不一致、编造工具调用结果、越权承诺
+      - 前置：检索质量决定上限，召回不到时允许拒答
+      - 约束：数字、金额、日期从结构化数据填充，而不是让模型生成
+      - 后置：逐条核验引用、用 NLI 或 LLM 判断论断是否被证据支持、规则校验
+      - 量化：人工标注集 + 校准过的 LLM judge，报告前后变化和样本量
+    followups:
+      - 拒答多了用户体验变差，怎么平衡？
+      - 怎么发现模型编造了一个根本没发生的工具调用结果？
+
+  - id: agent-design-proj-data-flywheel
+    q: 你的 Agent 上线后，怎么利用线上数据持续变好？数据飞轮真的转起来了吗？
+    type: project
+    topics: [agent, evaluation, fine-tuning]
+    difficulty: 3
+    answer_brief: >-
+      讲清闭环每一环：采集（完整 trace、点赞点踩等显式反馈、转人工 / 重问 / 放弃等隐式信号）→ 筛选（自动挖可疑会话、聚类归因）→ 标注（人工或模型辅助修正为正确答案或轨迹）→ 使用（进回归评测集，修提示词、检索、工具；量够了再做 SFT 或偏好数据）→ 验证（回归和灰度）。重点说明哪几环真的跑起来了、周期多长、带来多少提升。
+    key_points:
+      - 隐式信号通常比点赞多得多：转人工、追问、重复提问、任务中断
+      - Badcase 按根因归档：检索缺失、工具错误、理解错误、知识过期
+      - 先把 badcase 加进评测集再修，保证修复可回归
+      - 修复手段由快到慢：提示词 / 检索修复 → few-shot 库 → SFT / DPO
+      - 合规：用户数据脱敏、使用授权和保留期限
+    followups:
+      - 用户主动反馈不到 1%，怎么办？
+      - 用线上数据微调，会不会把错误也学进去？
+
+  - id: agent-design-proj-metric-drill
+    q: 你简历上写「任务成功率从 70% 提升到 90%」，这个数是怎么测出来的？可信吗？
+    type: project
+    topics: [agent, evaluation]
+    difficulty: 4
+    answer_brief: >-
+      面试官在考口径和统计意识。要讲清：评测集多少条、来源和分布；成功怎么判（规则还是模型、有没有和人工校准）；每题跑几次；对比的基线是哪个版本；提升是否超出噪声——样本量小的时候，20 个点可能只是几道题的差别。最好补一句线上对应指标有没有同步变化。
+    key_points:
+      - 口径：成功定义写清楚，不能改了定义再前后对比
+      - 样本量：100 条的集合上 1 题就是 1 个点；Agent 有随机性，要多次采样取均值
+      - 对照：同一评测集、同一 judge、同一采样参数，一次只变一个因素
+      - 防过拟合：反复对着评测集调 prompt 会过拟合，要留出集
+      - 线上一致性：离线涨了，线上解决率或满意度是否也涨
+    followups:
+      - 评测集是你们自己造的，怎么证明它不偏？
+      - 这 20 个点里，每个改动各贡献了多少？
+
+  - id: agent-design-proj-framework-choice
+    q: 你的项目为什么选这个 Agent 框架（或者为什么自研）？现在回头看，这个选择对吗？
+    type: project
+    topics: [agent, agent-framework]
+    difficulty: 3
+    answer_brief: >-
+      从需求出发，而不是从流行度出发：需要多细的控制粒度（显式状态图还是自由循环）、要不要持久化和人工介入、是否多 Agent 编排、可观测性、团队技术栈和生产稳定性。说出具体对比过的方案和放弃理由，比如框架抽象太厚难调试、版本变化快，或自研成本高但能精确控制上下文和缓存。最后诚实讲踩过的坑、现在会不会换。
+    key_points:
+      - 框架的价值：状态管理、checkpoint、流式、工具封装、生态集成
+      - 常见代价：抽象层藏住真实 prompt 难调试；升级破坏兼容；难精细控制上下文
+      - 自研合理场景：核心循环简单，对性能、缓存、上下文有特殊要求
+      - 说出被否决的方案和理由，证明做过调研
+      - 无论选哪个，都要能看到每次模型调用的完整输入输出
+    followups:
+      - 如果要从框架迁到自研，你会怎么迁？
+      - 这个框架的哪部分源码你读过？
+
+  - id: agent-design-proj-redo
+    q: 你这个 Agent 项目目前最大的局限是什么？如果让你重做一次，会怎么改？
+    type: project
+    topics: [agent]
+    difficulty: 3
+    answer_brief: >-
+      考的是复盘能力和技术判断。诚实指出 1-2 个真实短板（比如评测体系建得太晚、过早上多 Agent、工具粒度设计不当、上下文管理粗糙），说明造成了什么具体后果，再给出现在会采用的方案和理由。别说「没什么局限」，也别把问题全推给模型能力。
+    key_points:
+      - 局限要具体、有证据：某类 case 失败率高、成本超预算、延迟不达标
+      - 区分模型能力局限和工程设计局限，后者才是你能改的
+      - 重做方案体现新认知：先建评测、先单 Agent 再扩展、工具少而精
+      - 说明当时为什么那么做（时间、资源约束），体现取舍意识
+    followups:
+      - 你会先改哪一个？为什么？
+      - 这个局限现在有人在修吗？
+
+  # ───────────────────────── 手写代码 ─────────────────────────
+
+  - id: agent-design-code-react-loop
+    q: 手写一个最小的 Agent 循环：给定 LLM 调用接口和工具字典，让模型反复调用工具，直到给出最终答案。
+    type: coding
+    topics: [agent, tool-use, python]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      维护一个 messages 列表。每轮把 messages 和工具 schema 发给模型：若返回里有 tool_calls，就按名字查工具字典、解析 JSON 参数并执行，把结果作为 tool 消息（带对应的 tool_call_id）追加回去，进入下一轮；若没有工具调用，就把文本作为最终答案返回。外层设最大步数，超限后让模型基于已有信息总结或直接报错。
+    key_points:
+      - 先原样追加助手消息（含 tool_calls），再追加每个工具结果，ID 一一对应
+      - 未知工具名、JSON 解析失败、工具抛异常：错误文本作为工具结果回填，让模型自修
+      - max_steps 防死循环；检测连续相同的调用（同名同参）可提前中断
+      - 工具执行加超时，结果过长先截断
+      - 同一轮多个工具调用可以并发执行，但回填要和调用一一对应
+    followups:
+      - 模型一直用同样的参数调用同一个工具，你怎么处理？
+      - 改成流式输出要改哪些地方？
+
+  - id: agent-design-code-stream-tool-json
+    q: 模型以流式返回工具调用，参数 JSON 被拆成很多碎片，写代码把它们还原成完整的工具调用。
+    type: coding
+    topics: [agent, tool-use, python]
+    difficulty: 4
+    answer_brief: >-
+      按工具调用的索引维护累加器。OpenAI Chat Completions 的 delta.tool_calls 每个元素带 index，首个分片给出 id 和函数名，后续分片只带 arguments 字符串片段，按 index 拼接；Anthropic 则在 content_block_delta 的 input_json_delta 里给出 partial_json 片段。流结束后再整体 json.loads，失败就修复或重试。
+    key_points:
+      - 用 dict[index] 保存 id、name、参数缓冲区；多个工具调用可能先后或交错到达
+      - 只有拼完才能可靠解析；要提前展示进度可用容错的 partial JSON 解析
+      - 文本 delta 和工具 delta 可能出现在同一个流里，要分开处理
+      - 边界：参数为空字符串按空对象处理；流中断时丢弃不完整调用，绝不执行
+      - 解析成功后先做 schema 校验，再真正执行工具
+    followups:
+      - 想在参数还没生成完时就给用户展示进度，怎么做？
+      - 流中途断开了怎么办？
+
+  - id: agent-design-code-retry-backoff
+    q: 写一个调用 LLM API 的重试装饰器，要求指数退避加随机抖动，并区分哪些错误该重试。
+    type: coding
+    topics: [agent, python, high-availability]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      包装函数，捕获异常后先判断能否重试：超时、连接错误、429 限流、5xx 和过载可以重试；400 参数错误、401 / 403 鉴权失败、内容策略拒绝不该重试。等待时间取 min(上限, base × 2^attempt) 再加随机抖动（如 full jitter：在 0 到该值之间均匀取），若响应带 Retry-After 则优先遵守；超过最大次数或总时限就抛出最后一次异常。
+    key_points:
+      - 可重试判定集中在一个函数里，按异常类型和状态码判断
+      - 抖动避免大量客户端同时重试造成惊群
+      - 总时间预算（deadline）比单纯限制次数更贴近用户体验
+      - 非幂等写操作不能盲目重试，要配合幂等键
+      - async 版本用 asyncio.sleep，不能用 time.sleep 阻塞事件循环
+      - 每次重试打日志和指标，便于发现上游故障
+    followups:
+      - 调用链上每一层都做重试会出什么问题？
+      - 重试多次仍失败，怎么降级？
+
+  - id: agent-design-code-parallel-tools
+    q: 模型一次返回了 5 个相互独立的工具调用，用 asyncio 并发执行并汇总，要求单个超时或失败不影响其他。
+    type: coding
+    topics: [agent, tool-use, python]
+    difficulty: 3
+    answer_brief: >-
+      每个调用包成协程，用 asyncio.wait_for 加单独超时，再用 asyncio.gather(..., return_exceptions=True) 并发等待；遍历结果时把异常和超时转成结构化的错误结果，按原调用顺序和 tool_call_id 回填。需要限并发就套 Semaphore；同步阻塞的工具用 asyncio.to_thread 丢进线程池。
+    key_points:
+      - return_exceptions=True，避免一个异常让 gather 直接抛出
+      - TaskGroup（3.11+）任一任务失败会取消其余任务，不适合「互不影响」的要求
+      - 每个结果带 tool_call_id、状态、内容或错误信息，顺序与请求一致
+      - Semaphore 控制并发，避免打爆下游或触发限流
+      - 有副作用或相互依赖的工具不要并发，串行或按依赖排序
+    followups:
+      - 其中两个工具有依赖关系怎么办？
+      - 还要加一个整体超时，怎么实现？
+
+  - id: agent-design-code-token-budget
+    q: 写一个函数，把对话历史裁剪到给定的 token 预算以内，要求保留系统提示和最近的对话。
+    type: coding
+    topics: [agent, context-engineering, python]
+    difficulty: 3
+    answer_brief: >-
+      先固定保留 system 消息，并为本次输出预留 max_tokens；然后从最新消息往前累加 token，放得下就保留，放不下就停，最后按原顺序拼回。裁剪单位应该是「轮」而不是单条消息：助手的工具调用和对应的工具结果必须同进同出，否则 API 会报错或模型困惑。被丢掉的旧对话可以压缩成一条摘要放在 system 之后。
+    key_points:
+      - 计数用目标模型的 tokenizer 或官方计数接口，每条消息还有格式开销
+      - 预算 = 窗口上限 − 预留输出 − 工具定义 − 安全余量
+      - tool_call 与 tool_result 成组保留，历史不能以孤立的工具结果开头
+      - 最近一条用户消息必须保留；它单条就超预算时截断其中间部分
+      - 尽量整块丢弃最旧的部分，减少对 prompt cache 前缀的破坏
+    followups:
+      - 中间某条工具结果有 2 万 token，怎么处理？
+      - 摘要应该同步生成还是异步生成？
+
+  - id: agent-design-code-lru-cache
+    q: 手写一个 LRU 缓存（get / put 都是 O(1)），再说说怎么加 TTL 过期，用来缓存工具调用结果。
+    type: coding
+    topics: [algorithms, python, agent]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      哈希表 + 双向链表：哈希表从 key 映射到链表节点，链表按访问时间排序，头部最新、尾部最旧。get 命中就把节点移到头部；put 时已存在则更新并移到头部，否则插入头部，超容量就删尾节点并从哈希表移除。Python 可直接用 OrderedDict 的 move_to_end 和 popitem(last=False)。TTL 在节点上存过期时间，get 时惰性检查，过期即删。
+    key_points:
+      - 用哨兵头尾节点简化边界，插入删除都是 O(1)
+      - 边界：容量为 0、重复 put 同一 key、get 不存在的 key
+      - TTL：惰性删除 + 可选定期清理，过期判断用 time.monotonic
+      - 工具缓存的 key = 工具名 + 规范化参数（排序后的 JSON）+ 用户 / 租户
+      - 只缓存只读、幂等工具的结果；多线程访问要加锁
+    followups:
+      - 多线程并发访问怎么保证安全？
+      - LRU 和 LFU 分别适合什么访问模式？
+
+  - id: agent-design-code-rate-limiter
+    q: 实现一个限流器，保证对 LLM API 的调用每分钟不超过 N 次请求、M 个 token。
+    type: coding
+    topics: [algorithms, distributed-systems, python]
+    difficulty: 3
+    answer_brief: >-
+      用两个令牌桶：请求桶容量 N、每秒补充 N/60；token 桶容量 M、每秒补充 M/60。每次请求前按流逝时间惰性补充令牌，同时检查两个桶，都够才扣减放行，否则算出需要等待的时间再 sleep 或排队。token 数在请求前只能预估（输入 token + max_tokens），拿到响应后按真实用量回补或追扣。
+    key_points:
+      - 令牌桶允许一定突发；滑动窗口日志更精确，但内存随请求数增长
+      - 惰性补充：令牌 = min(容量, 当前 + 流逝时间 × 速率)，用单调时钟
+      - 两个桶的检查和扣减要原子：多线程加锁，asyncio 用 asyncio.Lock
+      - 单次需求超过桶容量要直接拒绝，否则永远等不到
+      - 多实例共享配额：Redis + Lua 脚本原子扣减，或在网关集中限流
+    followups:
+      - 多台机器共享一个 API key 的配额，怎么限流？
+      - 令牌桶和漏桶有什么区别？
+
+  - id: agent-design-code-json-repair
+    q: 模型输出里经常混着 markdown 代码块、多余解释，或者少个括号。写一个健壮的函数从中提取并校验 JSON。
+    type: coding
+    topics: [agent, python, prompt-engineering]
+    difficulty: 3
+    answer_brief: >-
+      分层处理：先直接 json.loads；失败就剥掉 ```json 代码围栏，或用括号配对扫描找出第一个完整的顶层对象（跳过字符串里的括号和转义）；再做确定性的小修复（去尾逗号、补齐末尾缺的括号）；解析后用 Pydantic 或 JSON Schema 校验类型和必填字段。仍失败就把具体报错带回模型重试，限次数。能用原生 Structured Outputs 时优先从源头约束。
+    key_points:
+      - '括号配对扫描要处理字符串内部的 { } 和 \" 转义'
+      - 修复只做确定性小改动，不去猜字段值
+      - Schema 校验和业务校验分开：类型正确不代表取值合法
+      - 重试提示里附上具体报错位置，比「请输出合法 JSON」有效
+      - 统计修复命中率；频繁需要修复说明 prompt 或模型选择有问题
+    followups:
+      - 原生 Structured Outputs 和事后修复各有什么优缺点？
+      - JSON 被 max_tokens 截断了怎么办？
+
+  - id: agent-design-code-tool-registry
+    q: 写一个装饰器，把普通 Python 函数注册成 Agent 工具，并根据类型注解和 docstring 自动生成 JSON Schema。
+    type: coding
+    topics: [agent, tool-use, python]
+    difficulty: 3
+    answer_brief: >-
+      用 inspect.signature 取参数、typing.get_type_hints 取类型，按映射表转成 JSON Schema（无默认值的参数进 required），描述从 docstring 解析；把 name、description、parameters 存进注册表，执行时按名字查函数，先校验参数再调用。也可用 Pydantic 的 create_model 或 TypeAdapter 直接生成 schema。
+    key_points:
+      - Optional 参数不进 required；Literal 转 enum；list[int] 转 array + items
+      - 不支持的自定义类型直接报错，或要求用 Pydantic 模型描述
+      - 重名注册直接报错，避免静默覆盖
+      - 跳过 self、*args、**kwargs 和运行时注入的参数（如 user_id 不暴露给模型）
+      - 调用前校验并做类型转换，异常转成错误结果回填，而不是让循环崩溃
+    followups:
+      - 为什么 user_id 这类参数不应该让模型来填？
+      - 工具很多时 schema 太占上下文，怎么办？
+
+  - id: agent-design-code-sse-parser
+    q: 不用 SDK，手写解析 LLM 流式接口的 SSE 响应，逐块拿到增量文本。
+    type: coding
+    topics: [agent, python, llm]
+    difficulty: 3
+    answer_brief: >-
+      按行读取字节流，并用增量解码器做 UTF-8 解码（多字节字符可能被切开）；事件之间以空行分隔，以 data: 开头的行取冒号后的内容，多行 data 用换行拼接，event: 行给出事件类型，以冒号开头的行是注释或心跳，直接忽略。遇到空行就派发事件：OpenAI 风格遇到 [DONE] 结束，否则 json.loads 后取 delta 里的文本；Anthropic 风格按 event 类型分支处理。
+    key_points:
+      - 网络分片不按行对齐，必须自己缓冲到换行再处理
+      - 用 codecs.getincrementaldecoder 防止中文被截断成乱码
+      - 区分事件类型：文本 delta、工具调用 delta、usage、error
+      - 流里可能出现 error 事件，要抛出而不是吞掉
+      - 两个事件间隔过长视为断流，重连或报错
+    followups:
+      - 流式中途断开，怎么避免重复内容或重复计费？
+      - SSE 和 WebSocket 怎么选？
+
+  - id: agent-design-code-dag-scheduler
+    q: Planner 输出了一组带依赖关系的子任务，写代码按依赖并行执行，并在某个任务失败时正确处理下游。
+    type: coding
+    topics: [agent, agent-planning, algorithms, python]
+    difficulty: 4
+    answer_brief: >-
+      本质是拓扑排序加并发调度。先建邻接表和入度表并检测环（Kahn 算法跑完仍有节点未处理即有环）；把入度为 0 的任务全部提交，任一任务完成就把下游入度减一，减到 0 的立即提交，用 asyncio.wait(return_when=FIRST_COMPLETED) 驱动。某任务失败时，把它的所有传递下游标记为跳过，无关分支继续执行，最后返回每个任务的状态和结果。
+    key_points:
+      - 执行前校验：有环、引用不存在的依赖，直接打回 planner 重新规划
+      - 上游结果放进共享的结果字典，按 task_id 传给下游
+      - 失败传播：BFS 把下游标记为 skipped；也可以触发 replan
+      - Semaphore 限制最大并发，外加整体超时
+      - 返回完整状态表（成功、失败、跳过），交给汇总步骤
+    followups:
+      - 失败后重新规划，怎么复用已经完成的结果？
+      - 怎么支持运行中动态追加新任务？
+
+  - id: agent-design-code-cosine-topk
+    q: 不用向量数据库，手写一个简单的向量检索：给定查询向量和 N 个文档向量，返回余弦相似度最高的 top-k。
+    type: coding
+    topics: [vector-search, algorithms, python]
+    difficulty: 2
+    answer_brief: >-
+      先对文档向量按行做 L2 归一化（可提前算好），查询向量也归一化，这样余弦相似度就等于点积；用一次矩阵乘法算出 N 个分数，再用 np.argpartition 以 O(N) 选出前 k 个，只对这 k 个排序。纯 Python 可以维护一个大小为 k 的最小堆，复杂度 O(N log k)。
+    key_points:
+      - 归一化要防零向量除零（加 eps 或跳过）
+      - argpartition 返回的前 k 个无序，需要再 argsort
+      - k 大于 N 时取 min(k, N)
+      - 精确检索是基线；数据量大、延迟要求高时才上 ANN（HNSW、IVF）
+      - 批量查询用 Q 乘 D 的转置，注意分块控制内存
+    followups:
+      - 内积、余弦、欧氏距离什么时候排序结果等价？
+      - 数据涨到千万级，你会怎么改？
+
+  # ───────────────────────── 行为面 ─────────────────────────
+
+  - id: agent-design-beh-why-agent
+    q: 你为什么想做 Agent 方向？你觉得这个岗位最核心的能力是什么？
+    type: behavioral
+    topics: [agent]
+    difficulty: 1
+    hot: true
+    answer_brief: >-
+      结构是「经历触发 → 对方向的判断 → 自身匹配 → 想在这里做什么」。用一个自己做过或深度使用 Agent 的具体经历说明兴趣来源；给出你对 Agent 价值和瓶颈的看法（比如模型能力在快速变强，落地瓶颈更多在上下文、工具、评估这些工程层）；再说你已经积累了哪些能力，以及和这个团队业务的结合点。
+    key_points:
+      - 避免空话（「AI 是未来」），要有亲身的项目或产品体验
+      - 有独立判断，包括对 Agent 局限的清醒认识
+      - 核心能力可以讲：评测驱动迭代、上下文与工具设计、系统工程、对模型行为的直觉
+      - 和公司业务挂钩：说出你对他们产品里 Agent 场景的理解
+    followups:
+      - 你觉得 Agent 现在最大的瓶颈是什么？
+      - 如果 Agent 热度降了，你还会做这个方向吗？
+
+  - id: agent-design-beh-keep-up
+    q: Agent 领域变化很快，你平时怎么跟进最新进展？最近印象最深的一个进展是什么？
+    type: behavioral
+    topics: [agent]
+    difficulty: 1
+    answer_brief: >-
+      先讲具体的信息源和消化方式，再用一个最近的例子证明你真的在跟。信息源可以是模型厂商的工程博客和文档、论文和 benchmark 榜单、开源项目的 release 和源码、社区讨论；消化方式是动手复现或在项目里小范围试用，并记录结论。举例时讲清它解决什么问题、和以前方法的区别、你自己的验证或看法。
+    key_points:
+      - 信息源要具体：厂商工程博客、协议规范更新、arXiv、开源仓库 changelog
+      - 有筛选标准：优先看有评测数据、有可复现代码的内容
+      - 有输出：复现笔记、组内分享、在项目里试点
+      - 例子讲到机制层面，而不只是「某某发布了新模型」
+    followups:
+      - 这个进展你自己动手试过吗？效果如何？
+      - 你怎么判断一个新框架值不值得引入项目？
+
+  - id: agent-design-beh-conflict
+    q: 产品经理要求 Agent「必须 100% 准确」才能上线，或者算法同学给的模型达不到你的预期，这类协作冲突你怎么处理？
+    type: behavioral
+    topics: [agent, evaluation]
+    difficulty: 2
+    answer_brief: >-
+      核心是把观点之争变成数据和风险的讨论。先弄清对方真正担心什么（资损、投诉、口碑），一起定义可量化的上线标准和评测集，按风险给场景分级：高风险动作加确认和兜底，低风险场景先灰度放量；对模型效果的分歧，用同一评测集做对照实验和 badcase 分析，定位问题在模型、数据还是工程。最后用一个真实例子讲结果。
+    key_points:
+      - 用 STAR 讲真实事件：冲突点、你的行动、结果
+      - 把「100% 准确」翻译成分场景的指标阈值和兜底方案
+      - 共建评测集和验收标准，减少主观争论
+      - 分层降风险：规则兜底、人工复核、灰度、可回滚
+      - 给对方选项而不是只说不行，同步风险和代价
+    followups:
+      - 如果对方坚持不同意你的方案呢？
+      - 有没有哪次冲突里你最后被证明是错的？
+
+  - id: agent-design-beh-ai-coding
+    q: 你平时怎么用 AI 编程工具（Cursor、Claude Code、Codex 等）？什么情况下它会帮倒忙？
+    type: behavioral
+    topics: [agent, tool-use]
+    difficulty: 2
+    answer_brief: >-
+      讲真实工作流而不是罗列工具：哪些任务交给 Agent（脚手架、样板代码、测试、跨文件重构、读陌生代码），哪些自己写（核心逻辑、安全相关）；怎么提高成功率（写清任务和验收标准、提供项目说明文件、先出计划再动手、小步提交、用测试验证）。帮倒忙的情况包括上下文不足时编造 API、大改动难以审查、为让测试通过而改测试，所以 diff 必须人工审。
+    key_points:
+      - 方法：任务拆小、给验收标准、先计划后执行、测试闭环
+      - 边界：生成代码必须审查，尤其是依赖、安全、并发逻辑
+      - 具体失败案例：编造不存在的库函数、改断言让测试通过、过度重构
+      - 能从使用者视角反推 Agent 设计：为什么权限、上下文、验证这么重要
+    followups:
+      - AI 生成的代码你会直接上线吗？怎么把关？
+      - 如果让你改进这个工具，你会改什么？

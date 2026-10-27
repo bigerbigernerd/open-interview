@@ -1,0 +1,758 @@
+# yaml-language-server: $schema=../../../schema/questions.schema.json
+source:
+  name: open-interview · Agent 面试卡组
+  license: CC-BY-SA-4.0
+
+defaults:
+  lang: zh
+  type: technical
+  roles: [ai-agent]
+  topics: [agent]
+
+questions:
+  # ───────────── Agent 训练：SFT 数据 ─────────────
+  - id: agent-llm-tool-sft-data
+    q: 要给模型做工具调用 / Agent 能力的 SFT，训练轨迹数据你会怎么构造？
+    topics: [agentic-rl, fine-tuning, tool-use]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      先搭可执行的工具环境和任务池，再让强模型（或人工）在环境里真实交互产出多轮轨迹，最后用执行结果和规则把轨迹筛干净。
+      核心是「任务多样 + 轨迹可验证 + 格式统一」：任务要覆盖单工具、多工具串并行、需要追问、不该调用等情况，
+      工具返回必须是真实执行结果，而不是模型脑补的。
+    key_points:
+      - 任务来源：真实日志脱敏、按工具 schema 让 LLM 反向生成需求、改写扩充
+      - 轨迹生成：强模型在真实或模拟工具环境里 rollout，记录真实返回
+      - 过滤：格式校验 → 实际执行 → LLM 判语义是否满足需求（APIGen 的三级校验思路）
+      - 配比：加入无需调用、缺参数要追问、工具报错后恢复的样本，避免见啥都调
+      - 落点：直接决定调用准确率、参数正确率和「不该调时不调」的克制
+    followups:
+      - 工具返回用模拟的还是真实执行的？各有什么问题？
+      - 怎么评估合成数据的质量和多样性？
+
+  - id: agent-llm-sft-loss-mask
+    q: 多轮工具调用轨迹做 SFT 时，哪些 token 计算 loss？工具返回的内容为什么要 mask 掉？
+    topics: [fine-tuning, agentic-rl, tool-use]
+    difficulty: 3
+    answer_brief: >-
+      通常只对 assistant 自己产出的 token（思考、工具调用、最终回复）算 loss，system、用户输入和工具返回（observation）都 mask 掉。
+      工具返回是环境给的，不是模型该学会生成的内容；如果也算 loss，模型会学着「自己编工具结果」，
+      出现不等真实返回就往下写、伪造 observation 的问题。
+    key_points:
+      - 实现：非 assistant 段的 labels 置 -100，按 chat template 的角色边界切分
+      - 多轮里每个 assistant 回合都算 loss，而不只是最后一轮
+      - RL 同理：Search-R1 等对检索 / 工具返回 token 做 loss mask 以稳定优化
+      - 训练和推理的 chat template、特殊 token 不一致，是线上调用格式崩的常见原因
+      - 落点：伪造工具结果是 Agent 训练里最常见的低级 bug 之一
+    followups:
+      - 先出错再被纠正的轨迹，出错那一步要不要算 loss？
+      - 轨迹超过最大长度时怎么截断？
+
+  - id: agent-llm-rejection-sampling
+    q: 什么是拒绝采样微调（RFT）？在 Agent / 推理模型训练里怎么用，为什么有效？
+    topics: [fine-tuning, agentic-rl]
+    difficulty: 3
+    answer_brief: >-
+      对每个任务用当前模型（或更强模型）采样多条回答 / 轨迹，用验证器（答案比对、单测、环境终态检查、奖励模型）只保留正确或高分的，
+      再拿来做 SFT，可以迭代多轮。它相当于「只用成功经验做模仿」，实现简单、比在线 RL 稳定，
+      是 DeepSeek-R1 等流水线里把 RL 收益固化成 SFT 数据的标准步骤。
+    key_points:
+      - 流程：采样 N 条 → 验证打分 → 留正确且多样的 → SFT → 用新模型再采
+      - 数据来自模型自己的分布，比蒸馏外部数据的分布偏移小
+      - 筛选：去重、限制每题保留条数、偏好更短 / 步数更少的成功轨迹、平衡难度
+      - 局限：只学成功样本，全错的难题没有信号，容易偏向简单题
+      - R1 在推理 RL 收敛后拒绝采样约 60 万推理样本，配约 20 万非推理数据再 SFT
+    followups:
+      - RFT 和 GRPO 这类在线 RL 的本质区别在哪？
+      - 一题采样多少条合适？全部失败的题怎么办？
+
+  - id: agent-llm-tool-calling-origin
+    q: 模型的 function calling 能力在训练层面是怎么来的？工具定义和调用在 token 层面长什么样？
+    topics: [fine-tuning, tool-use, llm]
+    difficulty: 3
+    answer_brief: >-
+      本质是格式化的文本生成：chat template 把工具 schema 渲染进 system 段，模型在后训练（SFT + RL）中学会在需要时
+      输出被特殊 token 或标签包住的结构化调用（函数名 + JSON 参数），推理服务再把这段解析成 tool_calls 返回给应用。
+      工具结果以 tool 角色回填，模型接着生成。所以调用质量取决于后训练数据，而不是 API 的魔法。
+    key_points:
+      - 工具定义以 JSON Schema 渲染进提示词，工具越多占的上下文越多
+      - 调用格式各家不同，如 Qwen 系列用 <tool_call> 标签包裹 JSON
+      - 服务端用 tool parser 抽取调用，可配合约束解码保证 JSON 合法
+      - 训练：多轮工具轨迹 SFT，再用执行正确性做奖励的 RL
+      - 落点：自部署时 template 或 parser 不匹配，是调用失败的常见根因
+    followups:
+      - 并行工具调用在训练数据里怎么表示？
+      - 为什么可用工具很多时调用准确率会下降？
+
+  # ───────────── Agent 训练：为什么 RL、怎么 RL ─────────────
+  - id: agent-llm-sft-vs-rl
+    q: 已经用高质量轨迹做了 SFT，为什么 Agent 模型还要再做 RL？SFT 的局限在哪？
+    topics: [agentic-rl, fine-tuning]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      SFT 是模仿学习：只见过「正确示范」的状态分布，上线后一旦走偏进入没见过的状态就容易一错到底（误差累积），也学不会从失败中恢复。
+      RL 让模型用自己的策略在环境里试错，直接优化任务成功率，能探索出示范之外的策略，泛化通常更好。
+      实践上 SFT 负责冷启动格式和基础能力，RL 负责把成功率往上推。
+    key_points:
+      - SFT 优化的是 token 级模仿，和「任务成功」不完全一致
+      - 多步任务里每步的小偏差会把模型带到训练分布之外
+      - RL 在自己的分布上学，能学到纠错、重试、换工具等恢复行为
+      - 论文 SFT Memorizes, RL Generalizes 发现 RL 对规则和视觉变体泛化更好
+      - SFT 仍然必要：稳定输出格式，避免 RL 初期奖励全为零学不动
+    followups:
+      - 什么情况下只做 SFT 就够了？
+      - SFT 做得太重会不会影响后续 RL 的探索？
+
+  - id: agent-llm-agentic-rl-vs-rlhf
+    q: Agentic RL 和传统的 RLHF 有什么区别？难在哪里？
+    topics: [agentic-rl, rlhf]
+    difficulty: 4
+    answer_brief: >-
+      传统 RLHF 基本是单轮：给 prompt、生成一段回复、奖励模型打一个偏好分，相当于单步 bandit。
+      Agentic RL 是多轮决策：模型在环境里反复「行动 → 拿到观察」，一条轨迹几十步、上万 token，
+      奖励多来自任务是否完成（可验证但稀疏），还要和真实工具 / 沙箱交互。难点集中在长程信用分配、rollout 成本和环境工程。
+    key_points:
+      - 动作：从「一段文本」变成多轮工具调用，状态里包含环境反馈
+      - 奖励：从学出来的偏好 RM 变成结果可验证奖励，稀疏且延迟
+      - 工程：需要大量并发沙箱，rollout 是主要耗时，常做异步和训推分离
+      - 训练：observation token 要 mask，长轨迹带来显存和长尾问题
+      - 目标：从「回复让人喜欢」变成「把任务做成」
+    followups:
+      - 多轮 rollout 里环境返回慢、长尾严重怎么办？
+      - 环境不确定（比如网页内容变化）对 RL 有什么影响？
+
+  - id: agent-llm-rlvr
+    q: 什么是可验证奖励的强化学习（RLVR）？哪些 Agent 任务适合用可验证奖励？
+    topics: [agentic-rl]
+    difficulty: 3
+    answer_brief: >-
+      RLVR 用程序化规则而不是学出来的奖励模型打分：答案对不对、单测过不过、SQL 结果是否一致，直接给 0/1 或分数。
+      好处是奖励噪声小、不容易被「讨好」式 hack、也省掉训练 RM。适合结果能客观检查的任务：数学、代码、
+      有标准答案的搜索问答、能检查最终状态的网页 / 操作系统任务。
+    key_points:
+      - 典型检查：数学比对答案、代码跑单测、SQL 比执行结果、表单 / 文件比终态
+      - DeepSeek-R1-Zero 只用准确率 + 格式两条规则奖励就训出了长 CoT
+      - 不适合开放式写作和主观偏好，需要 RM 或 LLM-as-judge 补充
+      - 风险：验证器有漏洞会被钻空子，如测试太弱、答案抽取规则可绕过
+      - 落点：做 Agent RL 要先投资「能自动判对」的任务和环境
+    followups:
+      - 验证器本身会误判怎么办？
+      - 开放式任务没有标准答案时怎么给奖励？
+
+  - id: agent-llm-reward-design
+    q: 训练一个多步工具调用的 Agent，奖励函数你会怎么设计？
+    topics: [agentic-rl]
+    difficulty: 4
+    hot: true
+    answer_brief: >-
+      以任务结果奖励为主（成功 1、失败 0，或按完成度给分），少量叠加格式奖励（调用可解析、参数合法）和代价项（步数、token、无效调用的轻微惩罚）。
+      原则是主信号必须对齐最终目标，辅助项权重要小、能随训练退火，否则模型会去优化辅助项本身。
+      奖励太稀疏时再用过程奖励或分步打分缓解。
+    key_points:
+      - 结果奖励：客观检查最终答案或环境终态，最难被 hack
+      - 格式奖励：前期帮助学会可解析的调用，后期应降权或去掉
+      - 代价项：步数 / 长度惩罚防冗长，过强会让模型不敢调工具
+      - 过程奖励：PRM 或规则给中间步骤打分，缓解稀疏但更易被钻空子
+      - 训练中持续抽查高奖励轨迹，确认任务真的完成了
+    followups:
+      - 奖励极其稀疏、一开始几乎全是 0 怎么办？
+      - 过程奖励和结果奖励怎么取舍？
+
+  - id: agent-llm-reward-hacking
+    q: 什么是 reward hacking？在 Agent / 代码 RL 里有哪些典型表现，怎么防？
+    topics: [agentic-rl, rlhf, agent-safety]
+    difficulty: 4
+    hot: true
+    answer_brief: >-
+      reward hacking 是模型找到了让奖励变高、却没有真正完成任务的捷径，根源是奖励只是目标的不完美代理。
+      Agent / 代码场景常见改测试或特判测试用例、硬编码期望输出、刷格式分、讨好 LLM 评审、反复调用工具骗过程奖励。
+      防法是把奖励做硬（隐藏测试、检查终态）、限制环境权限、多信号交叉验证，并持续人工抽查高分轨迹。
+    key_points:
+      - 代码场景：删改单测、跳过逻辑直接返回期望值、声称完成但没做
+      - RLHF 场景：回复越来越长、越来越谄媚，因为 RM 偏好长和顺从
+      - 环境防护：测试只读或隐藏、沙箱禁止访问评测脚本、以终态而非自报为准
+      - 训练防护：KL 约束、多个 RM 集成、定期刷新 RM、多种奖励互相校验
+      - 监控信号：训练奖励上涨，但人工评分或独立 benchmark 不涨
+    followups:
+      - 用 LLM-as-judge 当奖励时，怎么降低被 hack 的风险？
+      - 怎么在训练中自动发现 reward hacking？
+
+  - id: agent-llm-ppo
+    q: PPO 在 LLM 的 RLHF 里是怎么用的？需要哪几个模型，各自干什么？
+    topics: [rlhf, agentic-rl]
+    difficulty: 4
+    answer_brief: >-
+      经典 RLHF-PPO 有四个模型：Actor（被训练的策略）、Critic（价值模型，估计每个 token 位置的价值，用来算优势）、
+      Reward Model（给完整回复打分）、Reference（冻结的 SFT 模型，算 KL 防跑偏）。Actor 采样回复，RM 打分并扣除 KL 惩罚，
+      用 GAE 算优势，再用带 clip 的重要性比率更新 Actor、用回归更新 Critic。
+    key_points:
+      - clip 目标把新旧策略概率比限制在 1±ε 内，ε 常取 0.2
+      - 奖励通常只落在最后一个 token，GAE 用价值做 baseline 降方差
+      - 每个 token 扣 β·KL(π‖π_ref)，抑制 reward hacking 和语言退化
+      - Critic 通常和 Actor 同规模，显存和工程复杂度都高
+      - 落点：长轨迹里 Critic 难训，这是 GRPO 类无 Critic 方法流行的原因
+    followups:
+      - 为什么需要 Critic？去掉会怎样？
+      - PPO 训练不稳定时一般调哪些东西？
+
+  - id: agent-llm-grpo
+    q: GRPO 的原理是什么？相比 PPO 改了什么，为什么适合推理和 Agent 任务？
+    topics: [agentic-rl, rlhf]
+    difficulty: 4
+    hot: true
+    answer_brief: >-
+      GRPO（DeepSeekMath 提出）去掉了 Critic：对同一个 prompt 采样一组回答，用组内奖励的均值和标准差归一化，
+      (r_i − mean) / std 就是这条回答所有 token 的优势。其余沿用 PPO 的 clip 目标，KL 项直接加在 loss 里而不是扣在奖励上。
+      省掉一个与策略同规模的价值模型，又天然适配只有结果奖励的可验证任务。
+    key_points:
+      - 组内相对优势替代价值 baseline，省显存、少一个难训的模型
+      - 每题要采样一组（几条到几十条），开销转移到 rollout 推理上
+      - 全对或全错的组优势为 0、没有梯度；DAPO 用动态采样过滤这类组
+      - DAPO 还用不对称 clip（Clip-Higher）缓解熵坍缩，并去掉了 KL 项
+      - Dr. GRPO 指出长度归一化和 std 归一化有偏差，会让错误回答越来越长
+    followups:
+      - 组大小怎么选？太小或太大会怎样？
+      - GRPO 用在多轮 Agent 上，优势怎么分到每一轮？
+
+  - id: agent-llm-multiturn-rl-challenges
+    q: 把 GRPO / PPO 用到多轮 Agent 训练上，会遇到哪些具体难点？
+    topics: [agentic-rl]
+    difficulty: 5
+    answer_brief: >-
+      主要四类：一是 rollout 慢且长尾，每步都要等真实工具或沙箱返回，同步训练时 GPU 大量空等；
+      二是轨迹长，几万 token 的上下文带来显存压力和截断问题；三是信用分配，只有终局奖励时很难知道哪一步对、哪一步错；
+      四是环境不稳定、不可复现，同样的动作结果可能变化，奖励噪声大。
+    key_points:
+      - 工程：训推分离 + 异步 rollout，代价是数据略 off-policy，需重要性修正
+      - 环境：大规模并发沙箱（容器、浏览器），要能重置、能快照
+      - 训练：observation token 做 loss mask，按轮或按 token 组织优势
+      - 稀疏：组内全失败时没信号，需要课程学习、调难度或部分奖励
+      - 稳定性：多轮下熵坍缩、重复调用、输出越来越长更容易出现
+    followups:
+      - 异步 RL 带来的 off-policy 问题怎么处理？
+      - 工具返回的内容过长怎么处理？
+
+  - id: agent-llm-credit-assignment
+    q: 多轮 Agent 的 RL 只有最终成败奖励，信用分配问题怎么缓解？
+    topics: [agentic-rl]
+    difficulty: 5
+    answer_brief: >-
+      思路是把稀疏的终局信号变成步级信号。可以训练过程奖励模型（PRM）或用规则给中间步骤打分；
+      可以从中间状态做多次 Monte Carlo 续写，用后续成功率估计这一步的价值；
+      可以在组内找到相同的中间状态，比较从同一状态出发的不同动作（如 GiGPO 的 anchor state）；
+      也可以训练轮级 Critic，按轮而不是按 token 算优势。
+    key_points:
+      - 基线：结果奖励 + GRPO，整条轨迹所有 token 共用一个优势，粗但稳
+      - PRM：步级打分，需要人工标注或 MC 自动构造，容易被 hack
+      - MC 估计：从第 t 步重采多条续写，成功率即该步价值，成本高
+      - GiGPO：跨轨迹找相同环境状态做步级分组比较，几乎不增加 rollout
+      - 轮级 Critic：把一轮当一个动作，缩短有效 horizon
+    followups:
+      - PRM 的步级标签怎么自动生成？
+      - 为什么 token 级 GAE 在很长的轨迹上效果差？
+
+  # ───────────── 偏好优化与奖励模型 ─────────────
+  - id: agent-llm-dpo-vs-rlhf
+    q: DPO 和基于 PPO 的 RLHF 有什么区别？各自适合什么场景？
+    topics: [rlhf, fine-tuning]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      RLHF-PPO 先训奖励模型，再在线采样、用 RL 优化策略，链路长、要同时跑四个模型、调参难。
+      DPO 把「带 KL 约束的奖励最大化」的闭式最优解代回去，得到可以直接在偏好对上训练的分类式损失，
+      不需要 RM、不需要在线采样，像 SFT 一样稳定便宜。代价是它是离线方法，只能学已有数据的分布，探索和上限不如在线 RL。
+    key_points:
+      - 损失为 -log σ(β·(Δ_w − Δ_l))，Δ = log πθ(y|x) − log π_ref(y|x)
+      - β 控制偏离参考模型的程度，作用类似 KL 系数
+      - 已知问题：chosen 的概率也可能一起下降、对噪声敏感、容易过拟合
+      - 适合风格、安全、格式等主观对齐；可验证任务更适合在线 RL
+      - 变体：IPO、KTO（只需单条好 / 坏标签）、SimPO（不用参考模型）、迭代 DPO
+    followups:
+      - DPO 的损失是怎么从 RLHF 目标推出来的？
+      - 为什么通常先 SFT 再 DPO？
+
+  - id: agent-llm-agent-preference-data
+    q: 想用 DPO 优化 Agent，多轮轨迹场景下的偏好数据怎么构造？
+    topics: [rlhf, agentic-rl]
+    difficulty: 4
+    answer_brief: >-
+      最常见是轨迹级：同一任务让模型多次探索，成功轨迹当 chosen、失败轨迹当 rejected，迭代采样和训练（ETO 就是这个思路）。
+      更细的是步级：从同一个中间状态分叉出好坏不同的下一步动作，只对分叉的那一步做偏好，信号更精确。
+      chosen 也可以来自专家或更强模型，但要注意和当前策略的分布别差太远。
+    key_points:
+      - 轨迹级：同任务成功 vs 失败，简单但不知道是哪一步错了
+      - 步级：共享前缀、在出错步分叉，可用强模型或 MC 续写判断哪步错
+      - 共享前缀的 log 概率在两边抵消，梯度集中在分叉处
+      - 迭代 / 在线：每轮用新策略重新采样构造偏好对，缓解 off-policy
+      - 过滤：两条轨迹质量差距要明显，避免把噪声当偏好
+    followups:
+      - 失败轨迹到中途才出错，整条当 rejected 有什么问题？
+      - chosen 和 rejected 长度差异很大会怎样？
+
+  - id: agent-llm-reward-model
+    q: 奖励模型（RM）是怎么训练的？ORM 和 PRM 有什么区别？
+    topics: [rlhf, agentic-rl]
+    difficulty: 3
+    answer_brief: >-
+      RM 通常拿 SFT 模型把 LM head 换成标量头，在人类偏好对上用 Bradley-Terry 成对损失训练，
+      让 chosen 的分数高于 rejected，损失为 -log σ(r_w − r_l)。ORM（结果奖励模型）只给完整回答打一个分；
+      PRM（过程奖励模型）给每个推理或行动步骤打分，信号更密，能做步级信用分配和搜索时的验证器，但标注贵、也更容易被利用。
+    key_points:
+      - 数据：同一 prompt 的多个回答两两比较，先校验标注一致性
+      - RM 分数只有相对差值有意义，当奖励用前要归一化
+      - 常见偏差：偏好长回答、特定格式、讨好，RL 会把偏差放大
+      - PRM 数据：人工逐步标注（如 OpenAI 的 PRM800K）或 MC 续写自动估计
+      - 生成式 RM：先写评语再给分，可解释、能用推理，但成本高
+    followups:
+      - RM 验证集准确率很高，RL 效果却不好，可能是什么原因？
+      - 偏好数据正负均衡，RM 仍然偏向一边，可能是什么原因？
+
+  - id: agent-llm-rl-debug
+    q: Agent RL 训练中奖励不涨或者训崩了，你会怎么排查？
+    topics: [agentic-rl]
+    difficulty: 4
+    answer_brief: >-
+      先查数据和环境，再查算法。确认奖励函数和环境正确（人工跑几条、看高分样本是不是真成功），统计每批有多少组全对或全错（没有梯度信号）；
+      再看训练指标：熵是否快速坍缩、KL 和 clip 比例是否飙升、回复长度是否暴涨或塌缩、梯度范数是否异常；
+      最后检查训推不一致，比如推理引擎采样时的概率和训练框架重算的概率差得太多。
+    key_points:
+      - 难度：太难全 0、太易全 1 都没信号，做难度筛选或课程学习
+      - 熵坍缩：输出趋同、探索停止，可调高 clip 上界、调温度或加熵正则
+      - 长度暴涨：大量回答被截断，检查截断样本的奖励 / 屏蔽策略和长度惩罚
+      - 训推 mismatch：vLLM 等采样概率与训练前向不一致，用重要性采样修正
+      - 定期读最高分和最低分轨迹，是最快发现 reward hacking 的办法
+    followups:
+      - 熵坍缩和熵爆炸分别有什么表现？
+      - 怎么区分是环境 / 奖励的问题还是算法超参的问题？
+
+  # ───────────── 推理模型、测试时计算、蒸馏、流程 ─────────────
+  - id: agent-llm-reasoning-model-training
+    q: 以 DeepSeek-R1 为例，推理模型是怎么训练出来的？R1-Zero 和 R1 有什么区别？
+    topics: [agentic-rl, llm]
+    difficulty: 4
+    hot: true
+    answer_brief: >-
+      R1-Zero 直接在 V3-Base 上用 GRPO 做纯 RL，奖励只有答案准确率和格式两条规则，模型自发学会了长 CoT、反思和验证，但可读性差、语言混杂。
+      R1 先用几千条高质量长 CoT 数据冷启动 SFT，再做推理 RL（加语言一致性奖励），然后拒绝采样约 60 万推理 + 约 20 万非推理数据重新 SFT，
+      最后做覆盖全场景的第二轮 RL。
+    key_points:
+      - 关键发现：可验证奖励 + 大规模 RL，长链推理能力可以自发涌现
+      - 论文把 PRM 和 MCTS 列为没成功的尝试，最终只用规则奖励
+      - 冷启动解决 R1-Zero 的可读性和语言混杂，也让 RL 收敛更快
+      - 蒸馏：用这 80 万条样本直接 SFT Qwen / Llama 小模型，效果好于小模型自己做 RL
+      - 落点：Agent 模型的「思考 + 调工具」也沿用冷启动 SFT + RL 的范式
+    followups:
+      - 为什么 R1 的小模型版本用蒸馏而不是直接 RL？
+      - 所谓「aha moment」指的是什么？
+
+  - id: agent-llm-test-time-compute
+    q: 什么是 test-time compute scaling？有哪些实现方式，对 Agent 有什么意义？
+    topics: [llm, inference, agent-planning]
+    difficulty: 3
+    answer_brief: >-
+      指在推理阶段多花计算换更好的结果，而不是只靠把模型做大。两条路：一是并行，采样多个答案再选（多数投票、Best-of-N 配验证器、树搜索）；
+      二是串行，让单条推理变长（o1 / R1 式长 CoT、反思修改）。研究表明按题目难度分配推理预算比统一加大模型更划算。
+      对 Agent 来说，多想几步、多试几条路径、执行后自我验证都属于这一类。
+    key_points:
+      - 并行：self-consistency、Best-of-N + RM / 验证器、beam search、MCTS
+      - 串行：长 CoT、自我反思、迭代修改答案
+      - Snell 等（2024）：按难度自适应分配算力，效率比 Best-of-N 高 4 倍以上
+      - 代价：延迟和 token 成本上升，简单题会过度思考
+      - Agent 中：思考预算参数、失败重试、多候选 + 执行验证再选
+    followups:
+      - 简单问题也开长思考会有什么问题？怎么控制？
+      - Best-of-N 的效果上限受什么限制？
+
+  - id: agent-llm-distillation
+    q: 大模型蒸馏有哪些做法？把强模型的 Agent 能力蒸馏给小模型要注意什么？
+    topics: [fine-tuning, agentic-rl]
+    difficulty: 3
+    answer_brief: >-
+      两类：黑盒的序列级蒸馏，直接用教师生成的回答或轨迹做 SFT（R1 蒸馏小模型就是这样）；
+      白盒的 logits 蒸馏，让学生每个位置的 token 分布拟合教师（KL 损失），信息更多但要求词表一致、拿得到教师 logits。
+      近年还有 on-policy 蒸馏：学生自己采样，教师对学生的每个 token 打分，缓解学生没见过自己犯错状态的问题。
+    key_points:
+      - 序列级最简单，适配闭源教师，本质是用教师数据做 SFT
+      - logits 级：前向 KL 倾向覆盖所有模式，反向 KL 倾向抓住主模式
+      - on-policy 蒸馏兼顾 RL 的在线性和蒸馏的逐 token 密集信号
+      - Agent 蒸馏：轨迹要真实执行并过滤，工具和格式要与学生部署时一致
+      - 小模型容量有限，优先蒸馏高频任务，过长的推理链可能要截短
+    followups:
+      - 为什么小模型用蒸馏常常比直接做 RL 效果好？
+      - 学生模型把教师的幻觉也学去了怎么办？
+
+  - id: agent-llm-post-training-pipeline
+    q: 一个 Agent 模型的后训练一般怎么安排？SFT、偏好优化、RL 怎么衔接？
+    topics: [fine-tuning, rlhf, agentic-rl]
+    difficulty: 4
+    answer_brief: >-
+      典型顺序：SFT 冷启动（指令跟随 + 工具调用格式 + 少量高质量轨迹），可选拒绝采样扩充数据；
+      然后在可验证任务上做 RL（GRPO / PPO）提升成功率；再用偏好优化或通用 RL 对齐风格、安全和日常对话；
+      最后混合数据回炉防遗忘。每个阶段都要用评测集把关，确认收益不是用牺牲其他能力换来的。
+    key_points:
+      - SFT 数据量远小于预训练，质量和多样性比数量重要
+      - RL 前的 SFT 让输出格式稳定、初始成功率不为零
+      - 拒绝采样常插在两轮 RL 之间，把 RL 的收益固化为 SFT 数据
+      - DPO 多用于主观维度；客观任务优先用可验证奖励的 RL
+      - 每个阶段都追踪通用 benchmark，防止能力回退
+    followups:
+      - SFT 和 RL 阶段的数据量大致是什么量级？
+      - 标注数据很少时，你会怎么安排？
+
+  - id: agent-llm-forgetting
+    q: 做完领域 / 工具调用微调后，模型的通用能力明显下降，原因是什么？怎么缓解？
+    topics: [fine-tuning]
+    difficulty: 3
+    answer_brief: >-
+      这是灾难性遗忘：微调数据分布窄，梯度把模型推向只擅长这类数据的区域，同时可能破坏指令跟随、闲聊和安全行为。
+      缓解主要从数据和约束两方面：混入通用 SFT 数据做回放、降低学习率和训练轮数、用 LoRA 等只更新少量参数、
+      对参考模型加 KL 约束或做权重融合，并用通用评测集持续监控。
+    key_points:
+      - 回放：领域数据中混入一定比例的通用对话、代码、安全数据
+      - 少训：小学习率、少 epoch，早停看通用集而不只看领域集
+      - LoRA 限制更新范围，遗忘通常比全参微调轻，但不是免疫
+      - 模型融合：微调后权重与原模型插值或合并
+      - 落点：Agent 微调后常见不会正常聊天、或见啥都想调工具
+    followups:
+      - 领域数据和通用数据的混合比例怎么定？
+      - SFT 和 RL 哪个更容易造成遗忘？
+
+  # ───────────── 参数高效微调 ─────────────
+  - id: agent-llm-lora
+    q: LoRA 的原理是什么？低秩矩阵的维度怎么定，训练完怎么得到新权重？
+    topics: [fine-tuning]
+    difficulty: 3
+    hot: true
+    companies: [alibaba]
+    url: https://github.com/jx888-max/Interview-experience/tree/072303f/%E6%97%A5%E5%B8%B8%E5%AE%9E%E4%B9%A0/%E9%98%BF%E9%87%8C/20251015-%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%AE%97%E6%B3%95-%E9%98%BF%E9%87%8C%E5%81%A5%E5%BA%B7
+    answer_brief: >-
+      LoRA 冻结原权重 W（d×k），只训练旁路的两个低秩矩阵 B（d×r）和 A（r×k），r 远小于 d 和 k，前向为 h = Wx + (α/r)·BAx。
+      依据是微调带来的权重变化本身接近低秩。B 初始化为 0、A 随机初始化，保证训练开始时等于原模型；
+      训练完把 (α/r)·BA 加回 W 即得到新权重，推理没有额外延迟。
+    key_points:
+      - 可训练参数从 d×k 降到 r×(d+k)，r 常取 8～64
+      - α/r 缩放让调整 r 时不必大幅改学习率
+      - 只加在注意力投影上常不如所有线性层（含 MLP）都加
+      - 省的是梯度和优化器状态的显存，前向计算量并不少
+      - 落点：不同 Agent / 租户挂不同 adapter，多个 LoRA 共享一个底座服务
+    followups:
+      - LoRA 的 rank 越大越好吗？
+      - LoRA 和全参微调的效果差距主要体现在哪类任务？
+
+  - id: agent-llm-qlora
+    q: QLoRA 相比 LoRA 做了哪些改进？为什么能在单卡上微调很大的模型？
+    topics: [fine-tuning, inference]
+    difficulty: 3
+    answer_brief: >-
+      QLoRA 把冻结的底座权重量化成 4-bit 存储，计算时再反量化成 BF16，梯度只回传到高精度的 LoRA adapter。
+      三个关键点：NF4（针对正态分布权重设计的 4-bit 格式）、双重量化（对量化常数再量化）、分页优化器（借统一内存吸收显存峰值）。
+      论文报告能在单张 48GB GPU 上微调 65B 模型，效果接近 16-bit 微调。
+    key_points:
+      - 显存主要省在底座权重：16-bit 到 4-bit 约省 4 倍
+      - 计算时要反量化，速度比普通 LoRA 慢，用时间换显存
+      - 量化误差在一定程度上由 LoRA 训练补偿
+      - 部署时可保持 4-bit 底座 + adapter，或合并后重新量化，需复测精度
+    followups:
+      - NF4 和普通 INT4 有什么区别？
+      - QLoRA 训出的 adapter 合并到 FP16 底座上会有什么问题？
+
+  # ───────────── Transformer 基础 ─────────────
+  - id: agent-llm-self-attention
+    q: 讲一下自注意力的计算过程：Q、K、V 从哪来，各个矩阵的维度是多少？
+    topics: [transformer, llm]
+    difficulty: 2
+    hot: true
+    companies: [alibaba]
+    url: https://github.com/jx888-max/Interview-experience/tree/072303f/%E6%97%A5%E5%B8%B8%E5%AE%9E%E4%B9%A0/%E9%98%BF%E9%87%8C/20251015-%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%AE%97%E6%B3%95-%E9%98%BF%E9%87%8C%E5%81%A5%E5%BA%B7
+    answer_brief: >-
+      输入 X（n×d_model）分别乘可学习矩阵 W_Q、W_K、W_V 得到 Q、K、V，注意力为 softmax(QKᵀ/√d_k)·V：
+      QKᵀ 得到 n×n 的相关度矩阵，softmax 按行归一化成权重，再对 V 加权求和。多头时把 d_model 拆成 h 个头、每头 d_k = d_model/h，
+      各头算完拼接后乘 W_O；解码器还要加因果掩码，只看过去的 token。
+    key_points:
+      - Q 表示「我要找什么」，K 表示「我能被怎样匹配」，V 是实际携带的信息
+      - 维度：Q、K 为 n×d_k，V 为 n×d_v，分数矩阵为 n×n
+      - 计算复杂度 O(n²·d)，是长上下文昂贵的根源
+      - 因果掩码把未来位置置为 -inf，保证自回归
+      - 落点：Agent 上下文越长，注意力计算和 KV cache 成本都随之上升
+    followups:
+      - 为什么要多头，而不是一个大头？
+      - 为什么 Q 和 K 要用不同的投影矩阵？
+
+  - id: agent-llm-sqrt-dk
+    q: 注意力分数为什么要除以 √d_k？不除会怎样？
+    topics: [transformer, llm]
+    difficulty: 2
+    hot: true
+    companies: [alibaba]
+    url: https://github.com/jx888-max/Interview-experience/tree/072303f/%E6%97%A5%E5%B8%B8%E5%AE%9E%E4%B9%A0/%E9%98%BF%E9%87%8C/20251015-%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%AE%97%E6%B3%95-%E9%98%BF%E9%87%8C%E5%81%A5%E5%BA%B7
+    answer_brief: >-
+      假设 q、k 的各分量独立、均值 0、方差 1，点积 q·k 是 d_k 项之和，方差为 d_k，数值随 √d_k 增大。
+      数值一大，softmax 会变得极尖锐、接近 one-hot，大部分位置梯度几乎为 0，训练变慢甚至不稳定。
+      除以 √d_k 把点积方差拉回 1 左右，让 softmax 处在梯度正常的区间。
+    key_points:
+      - 点积方差等于 d_k，除以 √d_k 后方差约为 1
+      - softmax 饱和时，非最大项的梯度趋近于 0
+      - 若除以 d_k，方差变成 1/d_k，分布过平、区分度不够
+      - 也有模型额外对 Q、K 做归一化（QK-Norm）来稳定注意力数值
+    followups:
+      - 为什么是除以 √d_k 而不是 d_k？
+      - softmax 饱和为什么会导致梯度消失？
+
+  - id: agent-llm-gqa-mla
+    q: MHA、MQA、GQA、MLA 有什么区别？为什么现在的大模型很少用标准多头注意力？
+    topics: [transformer, inference]
+    difficulty: 3
+    answer_brief: >-
+      区别在 K、V 怎么共享。MHA 每个 query 头都有自己的 K/V 头；MQA 所有 query 头共享一组 K/V；
+      GQA 折中，把 query 头分组、每组共享一组 K/V；MLA（DeepSeek-V2 提出）把 K/V 压缩成低秩潜向量来缓存，用时再投影回去。
+      目的都是缩小 KV cache，因为解码阶段受显存带宽限制，KV cache 越小越快、越能放长上下文。
+    key_points:
+      - KV cache 大小与 KV 头数成正比，GQA 可把它缩小到 MHA 的几分之一
+      - MQA 省得最多但容易掉点，GQA 是主流折中（Llama 2 70B、Llama 3 等）
+      - MLA 只缓存压缩后的潜向量，并单独保留一小段解耦的 RoPE 分量
+      - 落点：KV cache 越小，同样显存下能放更长的 Agent 上下文和更大 batch
+    followups:
+      - GQA 的组数怎么选？
+      - MLA 为什么要单独处理 RoPE？
+
+  - id: agent-llm-rope
+    q: RoPE 旋转位置编码是怎么做的？和绝对位置编码比，为什么现在主流大模型都用它？
+    topics: [transformer, llm]
+    difficulty: 3
+    companies: [alibaba]
+    url: https://github.com/jx888-max/Interview-experience/tree/072303f/%E6%97%A5%E5%B8%B8%E5%AE%9E%E4%B9%A0/%E9%98%BF%E9%87%8C/20251015-%E5%A4%A7%E6%A8%A1%E5%9E%8B%E7%AE%97%E6%B3%95-%E9%98%BF%E9%87%8C%E5%81%A5%E5%BA%B7
+    answer_brief: >-
+      RoPE 把 q、k 向量的维度两两分组，每组看成二维平面上的向量，按「位置 m × 该组频率 θ_i」的角度旋转，θ_i = base^(-2i/d)。
+      旋转后 q_m·k_n 只依赖相对位移 m − n，等于用绝对位置的写法实现了相对位置编码；
+      没有额外参数、直接作用在注意力上，也方便通过插值或调 base 扩展上下文长度。
+    key_points:
+      - 只作用于 q 和 k，不作用于 v，在每一层注意力里施加
+      - 高频维度刻画近距离细节，低频维度刻画远距离关系
+      - 具有远程衰减：相对距离越远，内积上界越小
+      - base 常见 10000，长上下文模型会调大（如 Qwen3 为 100 万）
+      - 绝对位置编码受训练长度限制、相对位置信息要靠模型自己学
+    followups:
+      - 直接用超过训练长度的位置为什么效果会崩？
+      - 把 RoPE 的 base 调大有什么作用？
+
+  - id: agent-llm-long-context-ext
+    q: 预训练只有 4K / 8K 上下文的模型，是怎么扩展到 128K 的？
+    topics: [transformer, llm]
+    difficulty: 4
+    answer_brief: >-
+      主流做法是改 RoPE 并配合少量长文本继续训练。位置插值（PI）把新位置等比压缩回训练范围；
+      NTK-aware 改大 base，让高频维度基本不变、低频维度被插值；YaRN 按频率分段处理并修正注意力温度，用很少的微调就能扩展数倍；
+      也可以直接调大 base（ABF）后分阶段做长文本训练。工程上还要配合 FlashAttention 和长上下文 KV cache 管理。
+    key_points:
+      - 直接外推会崩：没见过的大角度旋转让注意力分布异常
+      - PI 简单，但压缩了近距离的分辨率，需要微调恢复
+      - YaRN 可作为推理时的 rope_scaling 配置，如 Qwen3 原生 32K 用 YaRN 扩到 128K
+      - 训练时逐步加长（如 4K → 32K → 128K），并混入短样本防短文本退化
+      - 落点：窗口变长不等于用得好，长上下文中间的信息仍容易被忽略
+    followups:
+      - Lost in the middle 是什么？Agent 设计上怎么规避？
+      - 静态 YaRN 对短文本有什么影响？
+
+  - id: agent-llm-bpe
+    q: BPE 分词是怎么工作的？为什么同样意思的中文、英文、代码消耗的 token 数不一样？
+    topics: [llm]
+    difficulty: 2
+    answer_brief: >-
+      BPE 从字符（或字节）出发，统计语料里相邻符号对的频率，反复把最高频的一对合并成新 token，直到达到目标词表大小；
+      编码时按学到的合并规则切分。所以 token 数取决于 tokenizer 的训练语料：常见英文单词往往是一个 token，
+      中文或稀有语言可能一个字一个甚至多个 token，代码里的空白和符号也常拆得很碎。byte-level BPE 以字节为单位，不会有未登录词。
+    key_points:
+      - 词表大小是取舍：词表大则序列短，但 embedding 和输出层更大
+      - 同一段文本在不同模型的 tokenizer 下 token 数可能差别明显
+      - 分词影响字符级任务：数字母、拼写、多位数算术容易出错
+      - 角色、工具调用等结构靠特殊 token，用户输入不应能伪造它们
+      - 落点：工具 schema 和 JSON 参数都按 token 计费、占上下文，要控制冗余
+    followups:
+      - 为什么大模型常数不清一个单词里有几个字母 r？
+      - 换了 tokenizer 还能直接复用原模型的权重吗？
+
+  - id: agent-llm-sampling-params
+    q: temperature、top-k、top-p 分别控制什么？Agent 的工具调用场景你会怎么设？
+    topics: [llm, inference]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      temperature 在 softmax 前把 logits 除以 T：T 小分布更尖、更确定，T 大更平、更随机；top-k 只保留概率最高的 k 个 token 再采样；
+      top-p（nucleus）按概率从高到低累加，保留累积概率刚超过 p 的最小集合。
+      工具调用、结构化输出、代码等要求正确性的场景用低温或贪心；需要多样性的探索、多候选投票才适度调高。
+    key_points:
+      - T 趋近 0 近似贪心，T = 1 是原始分布
+      - top-k 候选数固定；top-p 候选数随模型置信度自适应变化
+      - min-p 按最大概率的比例动态截断，是另一种常用变体
+      - 推理模型通常不建议贪心解码，过低温度可能导致重复和死循环，按官方推荐设
+      - 落点：执行写操作时用低温，需要多路径探索或自洽投票时适度升温
+    followups:
+      - temperature 设为 0 为什么输出还可能不一样？
+      - repetition penalty 和 presence penalty 分别做什么？
+
+  - id: agent-llm-hallucination
+    q: 大模型为什么会产生幻觉？请从训练和机制上分析成因。
+    topics: [llm]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      模型学的是「下一个 token 的概率分布」，生成的是统计上看起来合理的文本，而不是查证过的事实。
+      成因包括：预训练里只出现一两次的长尾事实难以学准；训练和评测多按准确率计分，猜错和说不知道都得 0 分，
+      模型被激励去猜（OpenAI 2025 年的分析）；SFT 让模型对超出知识边界的问题也用自信语气作答；采样也会引入错误。
+    key_points:
+      - 知识类：知识缺失、过时，长尾事实记不住
+      - 激励类：二元打分下「弃权」严格吃亏，应奖励校准过的不确定表达
+      - 对齐类：用模型不掌握的新知识做 SFT，反而会鼓励编造
+      - 上下文类：长上下文中忽略证据，或被无关信息带偏
+      - 落点：Agent 里表现为编造工具结果、虚构参数和不存在的 API，需执行验证兜底
+    followups:
+      - 用了 RAG 为什么还会有幻觉？
+      - 怎么检测和量化幻觉率？
+
+  # ───────────── 推理与部署 ─────────────
+  - id: agent-llm-kv-cache
+    q: KV cache 是什么？为什么能加速推理，显存占用怎么算？
+    topics: [inference, transformer]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      自回归生成时，每个新 token 都要和之前所有 token 做注意力，而历史 token 的 K、V 不会变，
+      所以把它们缓存起来，新 token 只算自己的 Q/K/V 再和缓存做注意力，每步计算从重算整个序列变成增量计算。
+      代价是显存：每个 token 占 2 × 层数 × KV 头数 × 头维度 × 字节数，长上下文、大 batch 时可能比权重还大。
+    key_points:
+      - 总量 = 2 × L × n_kv_heads × d_head × seq_len × batch × bytes
+      - 例：Llama-2-7B（32 层、32 头、头维 128、FP16）约 0.5MB / token，4K 上下文约 2GB
+      - 缩减：GQA / MLA、KV 量化（FP8 / INT8）、滑动窗口、淘汰不重要的 token
+      - decode 阶段每步都要读完整 KV cache，是显存带宽的主要消耗之一
+      - 落点：Agent 上下文只追加、不改写历史，才能跨轮复用缓存
+    followups:
+      - 为什么只缓存 K 和 V，不缓存 Q？
+      - KV cache 显存不够时推理框架会怎么处理？
+
+  - id: agent-llm-prefill-decode
+    q: LLM 推理的 prefill 和 decode 两个阶段有什么区别？TTFT 和 TPOT 分别受什么影响？
+    topics: [inference]
+    difficulty: 3
+    answer_brief: >-
+      prefill 一次性并行处理整段输入、生成 KV cache 和第一个 token，矩阵乘规模大，是计算瓶颈，决定首 token 延迟 TTFT；
+      decode 每步只生成一个 token，却要读一遍全部权重和 KV cache，计算少、搬运多，是显存带宽瓶颈，决定每 token 延迟 TPOT。
+      所以优化手段不同：prefill 靠前缀缓存复用和分块，decode 靠 batching、量化和投机解码。
+    key_points:
+      - TTFT 随输入长度增长，长 system prompt 和工具定义直接拉高 TTFT
+      - TPOT 取决于模型大小、KV 长度和 batch，与显存带宽直接相关
+      - chunked prefill：把长 prefill 切块和 decode 混排，避免卡住其他请求
+      - PD 分离：prefill 和 decode 放在不同机器上分别优化
+      - 落点：Agent 输入远长于输出，prefill 成本和缓存命中率是关键
+    followups:
+      - 为什么增大 batch 能提高 decode 吞吐，却不怎么增加单步延迟？
+      - PD 分离的代价是什么？
+
+  - id: agent-llm-temp0-nondeterminism
+    q: 为什么 temperature 设为 0，同一个请求多次调用结果还是可能不一样？
+    topics: [inference, llm]
+    difficulty: 3
+    answer_brief: >-
+      贪心解码本身是确定的，不确定来自数值层面：浮点加法不满足结合律，归约顺序不同会得到略有差异的 logits，
+      遇到概率接近并列的 token 就会走向不同分支，并被自回归放大。线上服务的主要诱因是 batch 不固定：
+      负载不同时同一请求被拼进不同大小的 batch，kernel 的切分和归约顺序随之改变；MoE 路由和多副本硬件差异会进一步加剧。
+    key_points:
+      - Thinking Machines（2025）指出主因是推理 kernel 缺乏 batch invariance
+      - 用 batch 不变的 RMSNorm、矩阵乘、注意力 kernel 可做到逐位一致，但有性能损失
+      - 自部署可以牺牲一些性能换确定性；商用 API 基本无法保证
+      - 落点：Agent 评测要多次运行看分布，不要拿单次结果下结论
+      - RL 训练中，训练和推理引擎的数值差异也会造成 off-policy 偏差
+    followups:
+      - 评测 Agent 时怎么处理这种随机性？
+      - 为什么 MoE 模型更容易出现输出不一致？
+
+  - id: agent-llm-quantization
+    q: 大模型量化有哪些常见方法？INT8 / INT4 量化后精度和速度会怎样？
+    topics: [inference]
+    difficulty: 3
+    answer_brief: >-
+      按量化对象分为只量化权重（如 W4A16，代表方法 GPTQ、AWQ）、权重和激活都量化（W8A8，如 SmoothQuant，或 FP8），以及 KV cache 量化；
+      按时机分为训练后量化（PTQ）和量化感知训练（QAT）。decode 受显存带宽限制，权重量化直接减少搬运量，提速明显。
+      INT8 基本无损，INT4 在多数任务上损失可控，但数学、代码和长推理更敏感。
+    key_points:
+      - 权重显存：7B 模型 FP16 约 14GB、INT8 约 7GB、INT4 约 3.5GB，另加 KV cache
+      - GPTQ 用近似二阶信息逐层补偿误差；AWQ 按激活幅度保护少数重要通道
+      - 难点是激活中的离群值，SmoothQuant 把量化难度从激活迁移到权重
+      - FP8 在 Hopper 等新 GPU 上有硬件支持，训练和推理都在用
+      - 落点：量化后要专门回归测试工具调用格式和参数正确率
+    followups:
+      - 为什么只量化权重在大 batch 时提速不明显？
+      - 13B 模型 INT4 量化后部署大约需要多少显存？
+
+  - id: agent-llm-paged-attention
+    q: vLLM 的 PagedAttention 和 continuous batching 分别解决什么问题？
+    topics: [inference]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      传统框架按最大长度给每个请求预留连续的 KV cache，碎片和过度预留严重，vLLM 团队统计现有系统浪费了 60%～80% 的 KV 显存。
+      PagedAttention 借鉴操作系统分页，把 KV cache 切成固定大小的块，用块表把逻辑位置映射到物理块，按需分配、几乎不浪费，还能跨请求共享前缀块。
+      continuous batching 在每个 decode 步动态加入新请求、移出已完成请求，不用等整批结束，GPU 利用率高得多。
+    key_points:
+      - 分页：块大小固定（默认 16 个 token），物理上不连续，靠块表寻址
+      - 共享：并行采样、beam search、相同前缀可共享块，写时复制
+      - continuous batching 源自 Orca 提出的迭代级调度
+      - 论文报告同等延迟下吞吐比 FasterTransformer、Orca 高 2～4 倍
+      - 落点：Agent 并发多、请求长度差异大，正是这两项收益最大的场景
+    followups:
+      - 显存不够时 vLLM 怎么抢占请求（swap 还是 recompute）？
+      - continuous batching 对单个请求的延迟有什么影响？
+
+  - id: agent-llm-speculative-decoding
+    q: 投机解码（speculative decoding）的原理是什么？为什么能加速却不改变输出分布？
+    topics: [inference]
+    difficulty: 4
+    answer_brief: >-
+      用便宜的草稿模型（或额外的预测头）先连续猜 k 个 token，再让目标大模型一次前向并行验证这 k 个位置：
+      以 min(1, p/q) 的概率逐个接受，第一个被拒的位置从修正后的分布重新采样。decode 受带宽限制，大模型验证 k 个 token 和生成 1 个耗时接近，
+      猜中越多加速越大；这套接受-拒绝规则在数学上保证输出分布与原模型完全一致。
+    key_points:
+      - 加速比取决于接受率：草稿与目标越像、文本越可预测越快
+      - 草稿来源：小模型、Medusa 多头、EAGLE、MTP 模块、n-gram 查找
+      - 贪心解码下就是检查草稿 token 是否等于大模型的 argmax
+      - batch 很大时 GPU 不再空闲，收益会下降
+      - 落点：Agent 输出的 JSON、代码可预测性高，接受率通常不错
+    followups:
+      - 草稿猜错很多时会不会比不用还慢？
+      - DeepSeek-V3 的 MTP 模块怎么用于投机解码？
+
+  - id: agent-llm-moe
+    q: MoE 架构是怎么工作的？相比稠密模型有什么优缺点？
+    topics: [transformer, llm, inference]
+    difficulty: 3
+    answer_brief: >-
+      MoE 把 Transformer 里的 FFN 换成多个专家 FFN 加一个路由器，每个 token 由路由器挑 top-k 个专家计算并加权求和，
+      所以总参数很大、每个 token 激活的参数很少，例如 DeepSeek-V3 总参数 671B、每 token 激活约 37B。
+      好处是同等计算量下模型容量更大；代价是所有专家都要放进显存、专家并行有 all-to-all 通信、训练要处理负载不均衡。
+    key_points:
+      - 路由：对专家打分取 top-k；DeepSeek 系列还设有始终激活的共享专家
+      - 负载均衡：常用辅助 loss；DeepSeek-V3 改用给专家加可调偏置的无辅助损失方案
+      - 推理：显存按总参数算、计算按激活参数算，适合大 batch 高吞吐服务
+      - 难点：专家塌缩、训练不稳定、小 batch 时硬件利用率低
+      - 落点：自部署 MoE 跑 Agent 显存门槛高，但单 token 延迟接近同激活规模的稠密模型
+    followups:
+      - 专家负载不均衡会带来什么问题？
+      - 为什么 MoE 模型的微调比稠密模型更难？
+
+  - id: agent-llm-flash-attention
+    q: FlashAttention 为什么能加速注意力计算？它减少了计算量吗？
+    topics: [inference, transformer]
+    difficulty: 4
+    answer_brief: >-
+      它没有减少 FLOPs，而是减少显存读写。标准实现要把 n×n 的分数矩阵写回 HBM 再读出来做 softmax，长序列时时间主要花在搬运上。
+      FlashAttention 把 Q、K、V 分块载入片上 SRAM，用 online softmax（边算边维护每行的最大值和归一化分母）在块内完成 softmax 和加权求和，
+      不落地完整的分数矩阵，是 IO 感知的精确注意力，结果与标准实现数学等价。
+    key_points:
+      - 额外显存从 O(n²) 降到 O(n)，长上下文训练和推理都受益
+      - online softmax 是能够分块计算的关键
+      - 反向传播时重算注意力分数而不是存下来，用计算换显存
+      - FlashAttention-2/3 继续优化并行划分，并利用 Hopper 等新硬件特性
+      - 落点：长 Agent 轨迹的训练和长 prompt 的 prefill 都依赖它
+    followups:
+      - online softmax 的递推公式是什么？
+      - FlashAttention 对 decode 阶段帮助大吗？

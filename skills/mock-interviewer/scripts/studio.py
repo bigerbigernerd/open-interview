@@ -274,9 +274,10 @@ def main():
     studio = Studio()
     ac_get, ac_post = voice.allclose_routes(ai=lambda bid, model, prompt, final:
                                             backends.complete(bid, prompt, (model or "").strip() or None, final))
-    handler = voice.make_handler(studio.bridge, get_routes={"/api/studio": studio.info, **ac_get},
+    cd_get, cd_post = voice.cards_routes()
+    handler = voice.make_handler(studio.bridge, get_routes={"/api/studio": studio.info, **ac_get, **cd_get},
                                  post_routes={"/api/studio/start": studio.start, "/api/studio/retry": studio.retry,
-                                              "/api/studio/stop": studio.stop, **ac_post})
+                                              "/api/studio/stop": studio.stop, **ac_post, **cd_post})
     port = voice.free_port(a.port)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
     httpd.daemon_threads = True
@@ -285,6 +286,7 @@ def main():
     print(f"Open Interview studio: {url}")
     if ac_get:
         print(f"allclose · 手撕:       http://127.0.0.1:{port}/#allclose")
+    print(f"记忆卡:               http://127.0.0.1:{port}/#cards")
     print(f"backends found: {', '.join(found) or 'none (install Claude Code, Codex, agy, Cursor Agent or OpenCode)'}")
     print("Ctrl+C to stop.")
     if not a.no_open:

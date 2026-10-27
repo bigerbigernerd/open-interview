@@ -59,6 +59,14 @@ def allclose_routes(ai=None):
     return allclose.routes(ai)
 
 
+def cards_routes():
+    """记忆卡: the review log and tags, kept in files under HOME/cards."""
+    if str(HERE) not in sys.path:
+        sys.path.insert(0, str(HERE))
+    import cards
+    return cards.routes()
+
+
 # ---------------- server ----------------
 
 class Bridge:
@@ -245,7 +253,8 @@ def free_port(preferred):
 def serve(port):
     log = HOME / "sessions" / time.strftime("%Y%m%d-%H%M%S.jsonl")
     bridge = Bridge(log)
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(bridge, *allclose_routes()))
+    (ac_get, ac_post), (cd_get, cd_post) = allclose_routes(), cards_routes()
+    httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(bridge, {**ac_get, **cd_get}, {**ac_post, **cd_post}))
     httpd.daemon_threads = True
     HOME.mkdir(parents=True, exist_ok=True)
     STATE.write_text(json.dumps({"port": port, "pid": os.getpid(), "log": str(log)}))

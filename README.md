@@ -10,7 +10,7 @@
 
 **中文** · [English](README.en.md)
 
-[网页面试](#方式一网页面试推荐) · [在 agent 里用](#方式二在-agent-里用) · [allclose · 手撕](#allclose--手撕大模型手撕题本地评测) · [在线刷题](https://bigerbigernerd.github.io/open-interview/) · [题库](#题库) · [贡献题目和面经](CONTRIBUTING.md)
+[网页面试](#方式一网页面试推荐) · [在 agent 里用](#方式二在-agent-里用) · [allclose · 手撕](#allclose--手撕大模型手撕题本地评测) · [记忆卡](#记忆卡agent-面试卡组--间隔重复) · [在线刷题](https://bigerbigernerd.github.io/open-interview/) · [题库](#题库) · [贡献题目和面经](CONTRIBUTING.md)
 
 </div>
 
@@ -23,7 +23,7 @@
 - 这里把开源题目统一成一种 **带标签、带出处** 的格式，谁都可以提 PR 补充新题和新面经。
   面试官用的是你电脑上已经登录的 agent，不需要 API key，也不额外花钱。
 
-## 四种用法
+## 五种用法
 
 | | 适合谁 | 怎么开始 |
 |---|---|---|
@@ -31,6 +31,7 @@
 | **在 agent 里用** | 平时就在 Claude Code / Codex 里干活 | 装上 skill，说「语音面试我」 |
 | **在线刷题** | 不想装任何东西，只想刷题 | 打开 [GitHub Pages](https://bigerbigernerd.github.io/open-interview/) |
 | **allclose · 手撕** | 准备大模型 / 算法岗的手撕代码 | 网页里的「手撕」，或 `skills/allclose/scripts/allclose.py` |
+| **记忆卡** | 要把八股背熟、准备 Agent 岗面试 | 网页里的「记忆卡」，左右划卡复习 |
 
 ## 方式一：网页面试（推荐）
 
@@ -160,9 +161,41 @@ python3 scripts/allclose.py hint attention    # 下一条提示
 在 Claude Code / Codex 里也能用：装上 `allclose` skill 后说「出一道大模型手撕题给我」，agent 会出题、
 在本地评测你的文件、通过后追问。新增题目的格式见 [skills/allclose/SKILL.md](skills/allclose/SKILL.md)。
 
+## 记忆卡：Agent 面试卡组 + 间隔重复
+
+![记忆卡：翻面看答案，往右划记得、往左划忘了](docs/cards.png)
+
+像 Anki 一样背八股：先在心里答一遍，点卡片看答案，**往右划 = 记得，往左划 = 忘了**（键盘 `→` / `←`，
+`↑` 简单、`↓` 模糊，`Z` 撤销）。下次什么时候再出现由 [FSRS](https://github.com/open-spaced-repetition/fsrs4anki)
+算法决定，和 Anki 现在默认用的是同一个调度器：记得牢的卡间隔越拉越长，忘了的很快再出现。
+
+- **Agent 面试卡组（315 张，带参考答案）**：Agent 基础与规划、工具调用与 MCP、记忆与上下文工程、多 Agent 与框架、
+  评估 / 安全 / 上线、RAG、Agent 训练与大模型基础、场景设计 / 项目深挖 / 手写代码。每张卡背面是「开口 30 秒该说的答案」
+  加要点清单和常见追问。新卡按「有答案 → Agent 核心主题 → 高频 → 由易到难」的顺序出现，RAG 和大模型基础作为辅助。
+  也可以切到「Agent 岗全部题」（加上题库里 500 多道没有答案的真题）或整个题库。
+- **复盘**：此刻平均记得的概率、近 30 天真实记忆率、你的遗忘曲线（FSRS 预测和实际记得的比例放在一张图里）、
+  每天复习量和记忆率、未来 14 天到期量、按标签 / 主题排出的薄弱点，以及最常忘的题，一键加练。
+- **标签**：每张卡可以打「重点 / 易错 / 不会 / 项目相关」或自己的标签，按标签筛选复习、按标签看记忆率。
+- **导出给 AI 复盘**：把薄弱主题和最常忘的题连同参考答案导出成 Markdown，贴给任意 AI 让它出追问。
+- **记录存在哪**：用 `studio.py` 打开时存在本机 `~/.mock-interviewer/cards/reviews.jsonl`（每次复习一行，状态都从这个
+  日志重算，换端口、换浏览器都不丢）；在线页面存在浏览器里，可以导出 / 导入 JSON 搬到本地。
+
+| 分组 | 张数 | 内容 |
+|---|---|---|
+| Agent 基础与规划 | 39 | Agent 的定义、Agent 和 Workflow 怎么选、ReAct / Plan-and-Execute / ReWOO / Reflexion、推理模型、失败模式、Prompt |
+| 工具调用与 MCP | 37 | function calling 与约束解码、几百个工具怎么选、出错回滚、MCP（架构、传输、授权、2026-07-28 无状态版）、A2A、computer use |
+| 记忆与上下文工程 | 40 | 短期 / 长期记忆、记忆的读写与遗忘、MemGPT / mem0、压缩与子 Agent 隔离、lost in the middle、prompt caching |
+| 多 Agent 与框架 | 39 | 编排模式、handoff、共享状态、多 Agent 失败分类、LangGraph、OpenAI Agents SDK、Claude Agent SDK、CrewAI / AutoGen |
+| 评估、安全与上线 | 42 | 轨迹评估、LLM-as-a-judge、SWE-bench / GAIA / τ-bench / BFCL、tracing、成本和延迟、prompt injection、沙箱与审批 |
+| RAG（辅） | 39 | 解析与切分、混合检索、rerank、HNSW / IVF-PQ、Agentic RAG、GraphRAG、RAG 评测与坏 case 排查 |
+| Agent 训练与大模型基础（辅） | 40 | 工具调用 SFT、Agentic RL / GRPO / reward hacking、DPO、注意力 / KV cache / RoPE、推理加速、MoE |
+| 场景设计、项目深挖、手写代码 | 39 | 客服 / Deep Research / 编程 Agent 设计、项目怎么讲、手写 ReAct 循环 / 流式工具调用解析 / 重试与限流 |
+
+其中 111 张标了高频；题型是八股 268、场景设计 20、手写代码 13、项目 10、行为面 4。答案由多个 agent 分领域整理，涉及论文数字、协议细节和框架 API 的大多对照过原文，拿不准的写成了不依赖具体数字的说法；发现不准的地方欢迎提 issue。
+
 ## 题库
 
-当前 **5,166** 道题（含 60 份面经里的 893 道），来自 18 个许可证允许再分发的开源项目，每道题都保留了原始链接。题目来源：
+当前 **5,481** 道题：其中 5,166 道（含 60 份面经里的 893 道）来自 18 个许可证允许再分发的开源项目，每道题都保留了原始链接；另外 315 道是上面带答案的 Agent 面试卡组。题目来源：
 
 | 来源 | 题数 | 方向 | 许可证 |
 |---|---:|---|---|
@@ -218,7 +251,7 @@ python3 scripts/bank.py show <id> -v
 ```text
 bank/
   tags.yml                  受控标签表：公司（含别名）、岗位（含层级）、题型、职级、常用 topic
-  questions/                题目；imported/ 由脚本从上游生成，不要手改
+  questions/                题目；imported/ 由脚本从上游生成，不要手改；agent/ 是带答案的 Agent 面试卡组
   experiences/              面经，一次面试一个文件；imported/ 由脚本从上游生成
 skills/allclose/            allclose · 手撕（可单独安装的 skill）
   problems/<id>/            每题一个文件夹：题面、模板、参考答案、测试、典型错误写法
@@ -231,7 +264,8 @@ skills/mock-interviewer/    可单独安装的 skill
   scripts/voice.py          agent 驱动模式的语音桥（只用标准库）
   scripts/studio.py         网页面试服务（只用标准库）
   scripts/backends.py       调用本机 agent CLI 的适配层
-  ui/                       面试 + 自助刷题页面（无依赖、无构建）
+  scripts/cards.py          记忆卡的复习记录存取
+  ui/                       面试、自助刷题、手撕、记忆卡页面（无依赖、无构建；fsrs.js 是调度算法）
   data/index.json           由 tools/build.py 生成的题库索引
 tools/build.py              校验 bank/ 和手撕题，生成索引
 tools/import_upstream.py    重新导入上游题库

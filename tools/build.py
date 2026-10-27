@@ -55,6 +55,18 @@ def norm(text):
     return re.sub(r"[\W_]+", "", text.lower())
 
 
+CJK = r"[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]"
+CJK_PUNCT = r"[\u3000-\u303f\uff00-\uffef]"
+
+
+def tidy(text):
+    """Drop the spaces YAML line folding leaves between Chinese characters and around Chinese punctuation."""
+    if not isinstance(text, str):
+        return text
+    text = re.sub(rf"(?<={CJK})\s+(?={CJK})", "", text.strip())
+    return re.sub(rf"(?<={CJK_PUNCT})\s+|\s+(?={CJK_PUNCT})", "", text)
+
+
 def as_list(v):
     if v is None:
         return []
@@ -258,12 +270,18 @@ def build(check_only=False):
             rep.warn(where, f"same question text as {texts[key]}")
         texts.setdefault(key, qid)
         out = {"id": qid, "q": item["q"], "lang": item["lang"], "type": item["type"]}
-        for f in ("roles", "topics", "companies", "levels", "followups", "key_points"):
+        for f in ("roles", "topics", "companies", "levels"):
             if item.get(f):
                 out[f] = item[f]
-        for f in ("difficulty", "hot", "answer_brief", "url", "notes", "round"):
+        for f in ("followups", "key_points"):
+            if item.get(f):
+                out[f] = [tidy(x) for x in item[f]]
+        for f in ("difficulty", "hot", "url", "round"):
             if item.get(f) not in (None, ""):
                 out[f] = item[f]
+        for f in ("answer_brief", "notes"):
+            if item.get(f) not in (None, ""):
+                out[f] = tidy(item[f])
         if item.get("weight", 1) != 1:
             out["weight"] = item["weight"]
         out["src"] = src_id(src)

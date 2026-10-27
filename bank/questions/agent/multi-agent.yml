@@ -1,0 +1,614 @@
+# yaml-language-server: $schema=../../../schema/questions.schema.json
+source:
+  name: open-interview · Agent 面试卡组
+  license: CC-BY-SA-4.0
+
+defaults:
+  lang: zh
+  type: technical
+  roles: [ai-agent]
+  topics: [multi-agent]
+
+questions:
+  # ---------- 为什么 / 什么时候用多 Agent ----------
+  - id: agent-multi-why-use
+    q: 为什么要用多 Agent？和单 Agent 相比，收益主要来自哪里？
+    topics: [multi-agent, agent]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      多 Agent 的收益主要来自三点：上下文隔离（每个子 Agent 只看自己子任务相关的信息，主上下文不被工具结果撑爆）、并行（独立子任务同时跑，缩短墙钟时间）、专业化（不同角色用不同提示词、工具集和模型）。本质是用更多 token 换更大的有效上下文和吞吐，适合可拆分、宽而浅的任务，比如广度调研。
+    key_points:
+      - 上下文隔离：子 Agent 消化大量原始材料，只把结论交回主 Agent
+      - 并行：互相独立的子任务同时执行，总耗时接近最慢的那一个
+      - 专业化：每个角色工具少、提示词聚焦，选工具更准、权限更小
+      - Anthropic 调研系统：Opus 4 主控 + Sonnet 4 子 Agent，内部评测比单 Opus 4 高 90.2%
+      - 适合宽而浅、可并行的任务；强依赖、需共享大量上下文的任务收益小
+    followups:
+      - 你项目里拆成多 Agent 后，哪个指标真的变好了？
+      - 不拆 Agent，单 Agent 靠工具和上下文压缩能否达到同样效果？
+
+  - id: agent-multi-when-worse
+    q: 什么情况下多 Agent 反而比单 Agent 更差？为什么生产里不能盲目上多 Agent？
+    topics: [multi-agent, agent]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      子任务之间强依赖、需要共享大量上下文或要求实时协调时，多 Agent 往往更差：信息在 Agent 间传递会丢失，各自做出相互冲突的隐含决策，上游错误被下游放大，token 成本和延迟成倍增加，调试也更难。多数编码任务可并行的部分少，单 Agent 加好的上下文管理通常更稳；应先用最简单的方案，有评测证据再升级。
+    key_points:
+      - 成本：Anthropic 数据中单 Agent 约耗普通聊天 4 倍 token，多 Agent 约 15 倍
+      - 协调：消息传递像传话游戏，摘要丢细节，子 Agent 误解任务
+      - 冲突：并行子 Agent 各自做隐含假设，合并时风格或接口对不上
+      - 错误累积：上游错误被下游当作事实继续加工，链越长越难纠正
+      - 调试难：非确定性叠加多条轨迹，复现和归因成本高
+    followups:
+      - 你怎么证明多 Agent 的提升不只是因为多花了 token？
+      - 哪类任务你会坚持用单 Agent？
+
+  - id: agent-multi-cost-control
+    q: 多 Agent 系统的 token 成本和延迟怎么控制？不同角色的 Agent 怎么分配模型？
+    difficulty: 3
+    answer_brief: >-
+      结构上按任务复杂度决定开几个子 Agent，能用确定性代码的步骤就不用 Agent；运行时给每个 Agent 设步数、token 和费用上限，子 Agent 只回传压缩后的结论；模型上做分层，规划和最终综合用强模型，检索、抽取、格式化等窄任务用便宜快的小模型。延迟主要靠并行和缩短关键路径来降。
+    key_points:
+      - 按复杂度伸缩：简单问题不派子 Agent，复杂问题才扇出
+      - 硬上限：最大轮数、单 Agent token 预算、整体费用预算、并发数
+      - 子 Agent 回传结构化摘要而不是原始工具输出
+      - 模型分层：主控和综合用强模型，窄子任务用小模型，评审可换一家模型
+      - 保持提示前缀稳定以命中 prompt cache，重复子任务做结果缓存
+    followups:
+      - 子 Agent 换成小模型后质量掉了，怎么定位是哪一步掉的？
+      - 并行扇出时怎么防止某个慢子 Agent 拖住整体？
+
+  - id: agent-multi-error-compounding
+    q: 多 Agent 链路里的错误为什么会累积放大？你会在哪些位置设检查点拦截？
+    difficulty: 3
+    answer_brief: >-
+      每一步都有失败率，串行组合后成功率近似相乘，每步 95%、10 步就只剩约 60%；而且下游 Agent 拿不到原始证据，只能把上游输出当事实继续推理，错误被层层「洗白」后更难发现。对策是在 Agent 交接处加验证闸门：schema 校验、可执行检查、关键节点独立评审或人工确认，失败时局部重试而不是整条链重跑。
+    key_points:
+      - 成功率连乘：0.95 的 10 次方约 0.60，链越长越要缩短或加校验
+      - 交接时附带证据或引用，让下游和评审能回查原始信息
+      - 校验闸门：schema 校验 + 规则检查 + 可执行验证（测试、查询结果核对）
+      - 失败时局部重试或回退到上一个检查点，而不是从头再跑
+    followups:
+      - 评审 Agent 本身也会错，怎么避免两个模型一起错？
+
+  # ---------- 编排模式 ----------
+  - id: agent-multi-patterns-overview
+    q: 常见的多 Agent 编排模式有哪些？各自适合什么场景？
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      常见模式有：流水线（固定顺序串联）、路由（先分类再派给专家）、orchestrator-worker / supervisor（主控动态拆任务、派给子 Agent 再汇总）、层级式（多级 supervisor）、handoff 交接（控制权在 Agent 间转移）、并行扇出 + 汇总、辩论 / 投票，以及评审者-执行者循环。越往后自主性越高，可控性和可预测性越低，选型时从最简单的开始。
+    key_points:
+      - 流水线 / 路由：确定性强、易测试，适合流程固定的业务
+      - orchestrator-worker：子任务事先不可知，需要运行时动态拆解
+      - handoff：客服分诊这类需要专家直接接管对话的场景
+      - 并行扇出 + 汇总：广度调研、多文件分析等可独立并行的任务
+      - 辩论 / 投票、评审者-执行者：用额外算力换准确率或质量
+    followups:
+      - 你的项目用的是哪种模式？为什么不用更简单的那种？
+      - 这些模式可以怎么组合？
+
+  - id: agent-multi-orchestrator-worker
+    q: orchestrator-worker（supervisor）模式是怎么工作的？和固定的并行工作流有什么区别？
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      由一个主控 Agent 理解任务、动态拆成子任务，派给 worker 子 Agent 执行（通常并行），收回结果后决定继续派活还是汇总输出。和固定并行工作流的区别是：子任务的数量和内容不是代码写死的，而是主控根据输入现场决定，所以适合事先无法预知子任务的问题；代价是主控本身成为质量和延迟瓶颈。
+    key_points:
+      - 主控职责：规划、派发、跟踪进度、汇总、决定是否继续
+      - worker 通常上下文独立、无长期状态，只回传结论
+      - 派活一般通过工具调用实现，LangGraph 官方也更推荐用工具调用而非 supervisor 库
+      - 主控应把计划写到外部存储，防止上下文过长被截断后丢失
+      - 同步等一批 worker 会被最慢的拖住；异步更快但状态一致性更难管
+    followups:
+      - 主控 Agent 拆错任务怎么办？
+      - worker 之间需要互相通信吗？需要的话怎么做？
+
+  - id: agent-multi-hierarchical
+    q: 什么时候需要层级式多 Agent（多级 supervisor）？它会带来哪些问题？
+    difficulty: 3
+    answer_brief: >-
+      当子 Agent 和工具太多、一个 supervisor 的上下文和决策能力管不过来时，按领域分组，每组一个中层 supervisor，顶层只在组之间调度，类似公司的部门结构。代价是每多一层就多一次信息压缩和一次 LLM 决策：延迟和成本上升、信息逐层失真、错误更难归因，所以层数要尽量少，能用路由解决的就不要加层。
+    key_points:
+      - 动机：单个 supervisor 面对几十个工具或 Agent 时选择准确率下降
+      - 结构：顶层管领域分组，中层管组内 worker，各层只看本层需要的信息
+      - 中层常封装成子图或子 Agent，对上层来说就像一个工具
+      - 风险：逐层摘要失真、延迟叠加、责任链长难以 debug
+      - 每层定义清晰的输入输出契约和终止条件
+    followups:
+      - 中层结果返回顶层时，传完整历史还是只传最终结论？
+
+  - id: agent-multi-handoff-vs-tool
+    q: 多 Agent 里的 handoff（交接）是什么？和把子 Agent 当工具调用（agent-as-tool）有什么区别？
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      handoff 是把对话控制权整个移交给另一个 Agent，之后由它直接面对用户继续多轮对话；agent-as-tool 是主 Agent 把子 Agent 当成一次函数调用，子 Agent 完成有边界的子任务后返回结果，控制权始终在主 Agent。前者适合分诊后由专家接管的客服场景，后者适合需要一个 Agent 对最终答案负责、汇总多方结果的场景。
+    key_points:
+      - handoff 通常也暴露成工具，OpenAI Agents SDK 默认叫 transfer_to_<agent 名>
+      - handoff 一般把之前的对话历史带给接收方，可用过滤器裁剪
+      - agent-as-tool 的子 Agent 不接管用户对话，只回传结果
+      - handoff 天然串行；agent-as-tool 可以并行调用多个子 Agent
+      - 两者可组合：被交接的专家仍可把其他 Agent 当工具用
+    followups:
+      - handoff 时把历史全带过去有什么问题？怎么裁剪？
+      - 交接给错了 Agent，怎么转回来？
+
+  - id: agent-multi-fanout-aggregate
+    q: 并行扇出 + 汇总的多 Agent 方案里，汇总那一步该怎么设计？
+    difficulty: 3
+    answer_brief: >-
+      汇总不能只是把子 Agent 输出拼起来。先规定子 Agent 的统一输出格式（结论、证据或来源、置信度、未完成项），汇总时做去重、冲突检测和按证据裁决，冲突时回查原始来源或追加一个核实任务；同时处理部分失败，超时或失败的分支要显式标注缺口，而不是让汇总模型悄悄补全。
+    key_points:
+      - 派活时子任务边界要互斥，否则重复劳动、结论重复
+      - 统一结构化输出，先用程序合并、去重，再交给模型综合
+      - 冲突裁决看证据质量，必要时追加核实子任务
+      - 部分失败要降级并标注缺失分支，避免编造补齐
+      - 汇总内容放不下时分层汇总（map-reduce）
+    followups:
+      - 子 Agent 给出互相矛盾的结论，你怎么裁决？
+      - 汇总时上下文放不下怎么办？
+
+  - id: agent-multi-debate-voting
+    q: 多 Agent 辩论（debate）和投票（voting）能提升什么？有什么局限？
+    difficulty: 3
+    answer_brief: >-
+      投票是让多个 Agent（或同一模型多次采样）独立作答再取多数，降低单次随机错误；辩论是多个 Agent 先各自作答，再互相看对方的答案和理由、多轮修正后收敛，Du 等人的工作显示它能提升事实性和推理准确率。局限是成本按 Agent 数乘以轮数增长、收益随轮数递减，且同一模型的多个副本偏见相同，可能一起收敛到错误答案。
+    key_points:
+      - 投票类似 self-consistency 的多 Agent 版，适合答案可比对的题
+      - 辩论流程：独立作答 → 交换答案与推理 → 多轮修正 → 收敛
+      - Agent 数和轮数增加有收益，但边际递减，几轮之后基本饱和
+      - 同源模型错误相关，换异构模型或不同提示视角能提升多样性
+      - 开放式生成难以直接投票，需要裁判 Agent 或评分规则
+    followups:
+      - 怎么避免辩论中正确的少数被多数说服？
+
+  - id: agent-multi-evaluator-optimizer
+    q: 评审者-执行者（evaluator-optimizer / generator-critic）模式怎么设计才有效？
+    difficulty: 3
+    answer_brief: >-
+      一个 Agent 负责生成，另一个按明确标准评审并给出可执行的修改意见，循环直到通过或达到轮数上限。关键是评审标准清晰可检查，评审能看到外部证据（测试结果、检索来源、规则检查）而不只是读文本，并设置最大轮数和「没有改进就停止」；评审和生成最好用不同提示甚至不同模型，避免自我认同。
+    key_points:
+      - 适用前提：有清晰的评价标准，且反馈确实能让结果变好
+      - 评审输出结构化：是否通过 + 具体问题 + 修改建议
+      - 优先用可执行信号（单测、lint、schema）而不是纯 LLM 打分
+      - 设最大轮数，分数不再提升即停，防止来回改
+      - 评审太松会走过场，太严会无限循环，要用标注集校准
+    followups:
+      - 评审 Agent 和执行 Agent 用同一个模型会有什么问题？
+
+  # ---------- 通信、状态、任务分配 ----------
+  - id: agent-multi-communication
+    q: 多 Agent 之间有哪些通信方式？自然语言消息、结构化消息和共享状态怎么选？
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      主要三类：直接传消息（自然语言或结构化 JSON，点对点或经主控转发）、共享状态 / 黑板（大家读写同一份 state 或消息池，按订阅取相关信息）、通过外部产物传递（文件、数据库记录、代码仓库，消息里只传引用）。自然语言灵活但易歧义、易丢细节；结构化消息可校验；大块内容放外部存储传引用，避免在多个上下文里反复复制。
+    key_points:
+      - 点对点消息简单，但 Agent 一多，连接数和传话失真都会增加
+      - 黑板 / 共享消息池解耦，按角色订阅，需要控制写权限和冲突
+      - 结构化消息定义字段（任务、结论、证据、状态），可做 schema 校验
+      - 大文件、代码、报告落盘，消息里只传路径或 ID
+      - 跨框架、跨组织通信可以用 A2A 这类标准协议
+    followups:
+      - 你的系统里 Agent 是直接对话，还是都经过主控？为什么？
+
+  - id: agent-multi-shared-state
+    q: 多个 Agent 读写同一份共享状态时，怎么避免冲突、保证一致性？
+    difficulty: 4
+    answer_brief: >-
+      先明确每个字段的所有权，尽量单写者，其他 Agent 只读或通过消息申请修改；需要多方写入的字段定义合并规则（追加、按 key 合并、自定义 reducer），而不是后写覆盖先写。并发写用版本号或乐观锁检测冲突，关键状态变更记事件日志便于回放；必要时由主控统一串行提交，牺牲一点并发换一致性。
+    key_points:
+      - 字段所有权：谁能写什么写清楚，最好在 schema 层约束
+      - 合并语义：列表追加、字典按 key 合并，避免后写覆盖导致丢数据
+      - LangGraph 就是给每个 state 字段配 reducer 来合并并行节点的更新
+      - 版本号 / 乐观锁检测并发冲突，冲突时重读后重算
+      - 状态变更事件化并持久化，便于审计、回放和恢复
+    followups:
+      - 两个并行分支改了同一个字段且结果矛盾，怎么办？
+
+  - id: agent-multi-context-isolation
+    q: 为什么子 Agent 通常要隔离上下文？主 Agent 应该给子 Agent 传什么、从子 Agent 收回什么？
+    topics: [multi-agent, context-engineering]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      隔离是为了让子 Agent 消化大量中间过程（搜索结果、读过的文件、失败尝试），主 Agent 只收到压缩后的结论，主上下文保持干净、不被撑爆也不被无关信息干扰。代价是子 Agent 看不到主对话，所以派活时要把目标、约束、已知事实和关键决定显式写进任务描述；回收时只要结论、证据引用和未解决问题，不要整段轨迹。
+    key_points:
+      - 收益：主上下文只增长摘要，长任务不易溢出、注意力不被稀释
+      - 例：Claude Agent SDK 子 Agent 从全新上下文开始，只把最终消息交回父 Agent
+      - 传入：目标、边界、输出格式、相关文件路径、已经做出的决定
+      - 收回：结构化结论 + 证据或文件引用 + 失败原因，原始数据落盘
+      - 风险：信息不足导致误解；可传完整轨迹或 fork 父上下文来缓解
+    followups:
+      - 子 Agent 需要大量父对话背景时，你会怎么做？
+      - 子 Agent 返回的内容太长，主 Agent 怎么处理？
+
+  - id: agent-multi-task-delegation
+    q: orchestrator 给子 Agent 派活时，任务说明里要写清楚什么？怎么决定开几个子 Agent？
+    topics: [multi-agent, agent-planning]
+    difficulty: 3
+    answer_brief: >-
+      每个子任务说明至少包含：明确目标、输出格式、可用工具和信息源建议、任务边界（做什么、不做什么），否则子 Agent 会重复劳动或理解偏差。子 Agent 数量按复杂度伸缩：简单事实查询一个 Agent 就够，对比类问题几个子 Agent 各查一方，复杂调研才扇出更多；拆分的前提是子任务彼此独立、结果可合并。
+    key_points:
+      - 四要素：目标、输出格式、工具和来源指引、边界
+      - 指令模糊的典型后果：两个子 Agent 查了同一件事
+      - Anthropic 经验：简单查询 1 个 Agent、3-10 次工具调用；对比类 2-4 个子 Agent
+      - 强依赖的步骤留给同一个 Agent，不要硬拆
+      - 把伸缩规则写进主控提示词，防止对简单问题过度派活
+    followups:
+      - 子任务之间有先后依赖时怎么调度？
+
+  - id: agent-multi-conflicting-decisions
+    q: 并行的子 Agent 各自做出了互相矛盾的设计决定，最后结果拼不起来，这类问题怎么避免？
+    difficulty: 4
+    answer_brief: >-
+      根源是每个动作都隐含决策（风格、接口、假设），子 Agent 只拿到任务片段、看不到彼此的选择，于是各自合理但整体冲突。Cognition 的例子：让两个子 Agent 分别做 Flappy Bird 的背景和小鸟，结果风格完全对不上。对策是主控先统一定下共享约定（接口、风格、数据格式）再派活，让子 Agent 拿到足够上下文，或把强耦合部分交给同一个 Agent 串行完成。
+    key_points:
+      - Cognition 原则一：共享上下文，而且共享完整轨迹，不只是单条消息
+      - 原则二：行动隐含决策，互相冲突的决策会带来坏结果
+      - 先定契约：接口签名、数据格式、风格指南写进每个子任务
+      - 写操作尽量单线程，并行子 Agent 更适合只读调研
+      - 合并前做一致性检查，冲突时回主控重新裁决
+    followups:
+      - 什么样的任务可以放心并行写，什么样的不行？
+
+  - id: agent-multi-termination
+    q: 多 Agent 对话怎么设计终止条件，防止死循环或互相踢皮球？
+    difficulty: 3
+    answer_brief: >-
+      不能只靠模型自己说「完成了」，要叠加多种终止条件：可验证的完成判据（验收检查通过、产出物齐全）、全局最大轮数或步数、token 预算、超时、重复检测（相同消息或相同工具调用反复出现）以及外部取消。触发上限时要有降级出口，比如返回部分结果并说明原因或转人工，而不是直接报错。
+    key_points:
+      - 完成判据尽量能被程序验证，而不只是看到某个关键词
+      - 硬上限：消息数 / 步数、token、墙钟时间，任一触发即停
+      - 循环检测：重复消息、来回 handoff 次数、连续无进展轮数
+      - 例：AutoGen 终止条件可用 | 组合；LangGraph 超过递归上限抛 GraphRecursionError
+      - 到达上限时返回部分结果 + 原因，必要时转人工
+    followups:
+      - 两个 Agent 来回 handoff 互相推诿，怎么检测和打断？
+
+  - id: agent-multi-a2a
+    q: A2A（Agent2Agent）协议解决什么问题？和 MCP 是什么关系？
+    topics: [multi-agent, mcp]
+    difficulty: 2
+    answer_brief: >-
+      A2A 是 Google 在 2025 年提出、后来捐给 Linux Foundation 的开放协议，让不同厂商、不同框架做的 Agent 能互相发现并委托任务。MCP 解决 Agent 怎么接入工具和数据，是 Agent 到工具的纵向连接；A2A 解决 Agent 怎么把任务交给另一个 Agent，是横向连接，对方 Agent 是不透明的，不需要暴露内部工具和记忆。两者互补。
+    key_points:
+      - Agent Card：用 JSON 描述能力、技能、端点和认证方式，供对方发现
+      - 以 Task 为协作单位，有提交、执行中、需要输入、完成、失败等状态
+      - 消息由多个 part 组成，产出以 artifact 形式返回
+      - 基于 HTTP 和 JSON-RPC，支持流式更新和长任务的异步推送
+      - 适合跨团队、跨组织互通；同一进程里的多 Agent 用框架内机制即可
+    followups:
+      - 什么场景你会用 A2A，而不是把对方包成一个 MCP 工具？
+
+  # ---------- 追踪、调试、评测、容错 ----------
+  - id: agent-multi-tracing
+    q: 多 Agent 系统的 trace 应该怎么组织，才能看清谁派了谁、每个 Agent 做了什么？
+    topics: [multi-agent, evaluation]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      沿用分布式追踪的模型：一次用户请求是一条 trace，每次 Agent 运行、LLM 调用、工具调用、handoff、guardrail 检查都是带 parent_id 的 span。关键是把子 Agent 的整段运行挂在派发它的那次工具调用 span 下面，跨进程或跨服务时传递 trace 上下文，这样能展开成一棵调用树，看到每个 Agent 的输入输出、耗时和花费，并能按 Agent 维度聚合成本与失败率。
+    key_points:
+      - trace 对应一次端到端请求；span 有起止时间和 parent_id
+      - 子 Agent 运行作为派发 span 的子树，handoff 单独记 span
+      - 跨进程或远程 Agent 要传递 trace ID，否则调用树会断开
+      - 每个 span 带 Agent 名、模型、prompt 版本，便于按角色聚合
+      - 例：OpenAI Agents SDK 默认开 tracing，自带 agent、handoff 等 span
+    followups:
+      - 线上 trace 量太大，怎么采样又不漏掉失败案例？
+
+  - id: agent-multi-debug-attribution
+    q: 多 Agent 系统给出了错误的最终结果，你怎么定位是哪个 Agent、哪一步出的问题？
+    topics: [multi-agent, evaluation]
+    difficulty: 4
+    answer_brief: >-
+      先用 trace 拉出这次请求的完整调用树，从最终输出往回追：看汇总 Agent 收到的输入是否已经错了，再逐级检查每个子 Agent 的输入（任务说明是否清楚）和输出（是否忠实于工具结果）。定位到可疑节点后，固定它的输入单独重放并多次采样，或把它的输出换成正确答案看最终结果能否恢复，确认根因后把案例加入回归集。
+    key_points:
+      - 倒推：沿 span 树回溯到第一个出错的节点
+      - 区分根因：任务说明不清、单个 Agent 推理或工具出错、交接时信息丢失
+      - 固定输入重放 + 多次采样，区分偶发失败和稳定失败
+      - 替换 / 消融：把某个 Agent 的输出换成正确值，看结果是否修复
+      - 修复后用同一批回归用例验证，防止按下葫芦浮起瓢
+    followups:
+      - 问题只在线上偶发、本地复现不了，怎么办？
+
+  - id: agent-multi-mast-failures
+    q: 多 Agent 系统常见的失败模式有哪些？有没有系统化的分类？
+    topics: [multi-agent, evaluation]
+    difficulty: 3
+    answer_brief: >-
+      论文 Why Do Multi-Agent LLM Systems Fail? 提出 MAST 分类，把 14 种失败模式归为三大类：系统设计 / 规格问题（违背任务或角色设定、重复步骤、丢失历史、不知何时终止）、Agent 间失配（对话重置、不主动澄清、任务跑偏、隐瞒信息、忽略他人输入、推理与行动不一致）、任务验证问题（过早终止、缺少验证或验证错误）。
+    key_points:
+      - 数据来源：7 个多 Agent 框架、200 多个任务的执行轨迹人工标注
+      - 结论：大量失败来自系统设计和 Agent 间协作，不只是模型能力不足
+      - 只改提示词、调拓扑能缓解，但不能根治
+      - 建议：明确角色和终止条件、多层次验证、标准化通信格式
+    followups:
+      - 你的系统里最常见的是哪一类失败？怎么修的？
+
+  - id: agent-multi-eval-vs-single
+    q: 怎么评估一个多 Agent 方案是否真的比单 Agent 好？
+    topics: [multi-agent, evaluation]
+    difficulty: 3
+    answer_brief: >-
+      做受控对比：用同一批有代表性的任务，单 Agent 基线要做到位（同样的工具、合理的提示词和上下文管理），并在相近的 token 或费用预算下比较，否则提升可能只是多花了 token。指标同时看成功率、成本、延迟和多次运行的方差，再按任务类型分桶，常见结论是可并行的广度任务提升明显，强依赖任务没提升甚至更差。
+    key_points:
+      - 强基线：单 Agent 也给同样的工具和上下文压缩，不做稻草人
+      - 等预算对比：Anthropic 发现 BrowseComp 上 token 用量单独解释约 80% 的性能方差
+      - 指标：成功率、每任务成本、P50 / P95 延迟、多次运行方差
+      - 分桶分析：按任务类型、难度看收益落在哪里
+      - 轨迹检查：是否有重复劳动、无效派活
+    followups:
+      - 多 Agent 有时大幅领先、有时大幅落后，怎么解读？
+
+  - id: agent-multi-subagent-failure
+    q: orchestrator 派出去的子 Agent 失败、超时或交回明显错误的结果时，主控应该怎么处理？
+    difficulty: 4
+    answer_brief: >-
+      先校验再采信：子 Agent 的结果要过格式校验和基本合理性检查，不合格就当失败处理。失败后按原因分别处理：限流、超时等瞬时错误带退避重试；任务说明不清导致的跑题，就补充上下文、缩小范围后重新派发；多次失败则降级，跳过该分支并在汇总中标注缺口，或者转人工。整个过程受总预算约束，失败原因记进 trace。
+    key_points:
+      - 结果校验：schema、必填字段、引用是否真实存在，不合格不进汇总
+      - 瞬时错误重试要有次数上限和退避，避免放大限流
+      - 语义失败：补充上下文、拆小任务后重新派发，或换一个子 Agent
+      - 降级：部分结果 + 缺口说明，比编造补全更安全
+      - 有副作用的子任务重试前确认幂等，防止重复执行
+    followups:
+      - 子 Agent 超时但其实还在跑，主控已经重新派发了，怎么避免重复执行？
+
+  # ---------- LangChain / LangGraph ----------
+  - id: agent-multi-langchain-vs-langgraph
+    q: LangChain 和 LangGraph 是什么关系？各自适合什么？
+    topics: [agent-framework]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      LangChain 是高层框架，提供模型、工具、检索等集成和开箱即用的 Agent 封装；LangGraph 是底层编排运行时，用状态图描述带循环和分支的流程，提供持久化、中断恢复、人工介入和流式输出。2025 年 10 月两者发布 1.0 后，LangChain 的 create_agent 本身就构建在 LangGraph 之上：简单 Agent 用 LangChain 快速搭，需要精细控制流程和状态时直接用 LangGraph。
+    key_points:
+      - LangChain：集成层 + 高层 Agent API，追求上手快
+      - LangGraph：底层运行时，显式图结构 + 可持久化状态
+      - 1.0 用 create_agent 取代旧的 create_react_agent，并引入 middleware 钩子
+      - 旧的 LLMChain 等 chain、检索器、索引 API 移到了 langchain-classic 包
+      - 两者都可接 LangSmith 做追踪和评测
+    followups:
+      - 什么时候你会从 create_agent 换成手写 LangGraph 图？
+
+  - id: agent-multi-langgraph-why-graph
+    q: 为什么 LangChain 生态从 chain 走到了 graph？LangGraph 解决了 chain 解决不了的什么问题？
+    topics: [agent-framework]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      chain 本质是有向无环的线性管道，适合一次跑完的「输入 → 处理 → 输出」，但 Agent 需要循环（反复调工具直到完成）、条件分支、跨步骤的可持久化状态，以及在中途暂停等人确认再继续。早期 AgentExecutor 把循环藏在黑盒里，难定制也难调试；graph 把步骤建模成节点、控制流建模成边，循环和分支变成显式结构，再配合 checkpoint 支持中断、恢复和回溯。
+    key_points:
+      - chain：DAG、一次性执行，难以表达循环和回退
+      - Agent 需要：循环、条件路由、跨步骤状态、失败恢复、人工介入
+      - graph：节点是步骤，边是控制流，状态在节点间显式传递
+      - 好处：可视化、可单步调试、能在任意节点插入人工审批
+      - 代价：要自己设计状态和路由，学习成本高于高层封装
+    followups:
+      - 用 graph 写的 Agent 和直接写 while 循环的 Agent 有什么本质区别？
+
+  - id: agent-multi-langgraph-state-reducer
+    q: LangGraph 里的 State、Node、Edge 和 reducer 分别是什么？并行节点同时更新状态时怎么合并？
+    topics: [agent-framework]
+    difficulty: 3
+    answer_brief: >-
+      State 是全图共享的数据结构（TypedDict 或 Pydantic），Node 是接收当前状态、返回部分更新的函数，Edge 决定下一步执行哪个节点，条件边由路由函数根据状态选去向。每个状态字段可配 reducer：没配时新值直接覆盖，配了就按规则合并，比如列表追加、add_messages 按消息 ID 追加或替换。执行按 super-step 推进，同一步里并行节点的更新经 reducer 合并。
+    key_points:
+      - 节点只返回要改的字段，不需要返回整个 state
+      - 没有 reducer 的字段在同一步被两个并行节点写入会报错
+      - Annotated[list, operator.add] 表示追加；MessagesState 内置 add_messages
+      - 执行模型借鉴 Pregel：按 super-step 推进，同一步内的节点并行
+      - START 和 END 是虚拟节点，用来指定入口和结束
+    followups:
+      - 想清空一个带追加 reducer 的列表字段怎么办？
+      - 节点之间传递很大的对象会有什么问题？
+
+  - id: agent-multi-langgraph-checkpoint
+    q: LangGraph 的 checkpoint 机制保存了什么？它支撑了哪些能力？
+    topics: [agent-framework, agent-memory]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      编译图时传入 checkpointer 后，LangGraph 在每个 super-step 结束时把整张图的状态快照（各字段的值、下一步要执行的节点、元数据、父快照指针）按 thread_id 存下来。有了它就能做多轮对话记忆、interrupt 暂停后恢复、失败后从最近检查点续跑，以及时间旅行：查看历史快照、从旧快照重放，或修改状态后分叉出新分支。
+    key_points:
+      - thread_id 区分会话；每个快照有 checkpoint_id 和父快照指针
+      - InMemorySaver 只适合开发，生产用 Postgres 等持久化实现
+      - get_state / get_state_history 查快照；update_state 生成新快照，不改旧的
+      - pending writes：同一步中已成功节点的写入会保留，恢复时不重跑它们
+      - checkpointer 管单个 thread 的短期状态，跨会话长期记忆用 Store
+    followups:
+      - checkpoint 越积越多导致变慢，怎么处理？
+      - 从旧快照重放时，外部副作用会不会重复执行？
+
+  - id: agent-multi-langgraph-interrupt
+    q: 在 LangGraph 里怎么实现 human-in-the-loop？用 interrupt 恢复执行时有什么坑？
+    topics: [agent-framework, agent-safety]
+    difficulty: 4
+    hot: true
+    answer_brief: >-
+      在节点里调用 interrupt(payload)，图会暂停并通过 checkpointer 保存状态，payload 返回给调用方展示给人；人处理后用同一个 thread_id 传入 Command(resume=值) 继续，这个值就成为 interrupt() 的返回值。最大的坑是恢复时整个节点从头重新执行，而不是从 interrupt 那一行继续，所以 interrupt 之前的副作用会重复发生，必须幂等或挪到单独节点。
+    key_points:
+      - 前提：必须配置 checkpointer，并在 config 里传 thread_id
+      - 节点重跑：interrupt 之前的写库、发消息、扣款会再执行一次
+      - 不要用裸 try/except 包住 interrupt，它靠抛特殊异常来暂停
+      - 一个节点内多次 interrupt 按调用顺序匹配恢复值，顺序必须稳定
+      - interrupt_before / interrupt_after 是静态断点，官方建议主要用于调试
+    followups:
+      - 审批要等几天，中间服务重启了，怎么保证还能继续？
+      - 人工改了 Agent 准备调用的工具参数，怎么写回状态？
+
+  - id: agent-multi-langgraph-send-command
+    q: LangGraph 的 Send 和 Command 分别解决什么问题？
+    topics: [agent-framework]
+    difficulty: 4
+    answer_brief: >-
+      Send 用于动态扇出：条件边返回一组 Send(节点名, 子状态)，按运行时才确定的数量并行启动同一节点的多个实例，结果经 reducer 汇总，是 map-reduce 和 orchestrator-worker 的基础。Command 让节点一次返回同时完成更新状态和决定跳转（update + goto），适合 Agent 自己决定交给谁的 handoff，还能用 graph=Command.PARENT 从子图跳回父图。
+    key_points:
+      - Send：子任务个数运行时才知道时用，每个 Send 带独立输入
+      - 并行分支写同一字段要配追加类 reducer
+      - Command(update=..., goto=...) 把状态更新和路由合在一个返回值里
+      - Command(resume=...) 也用于从 interrupt 恢复
+      - 同一节点别既写静态边又用 Command 路由，静态边仍会执行
+    followups:
+      - 用 Send 扇出 100 个子任务，怎么控制并发和失败？
+
+  # ---------- 其他框架 ----------
+  - id: agent-multi-autogen
+    q: AutoGen 的多 Agent 协作思路是什么？它的群聊模式怎么决定下一个发言者？
+    topics: [agent-framework, multi-agent]
+    difficulty: 3
+    answer_brief: >-
+      AutoGen 是微软的多 Agent 框架，核心思想是「对话即编排」：Agent 收发消息来协作，多个 Agent 组成团队在同一群聊里发言。选下一个发言者有三种：轮询（RoundRobinGroupChat）、模型看上下文选人（SelectorGroupChat）、Agent 发 handoff 消息指定（Swarm）。AutoGen 现已转入维护，官方让新项目用 Microsoft Agent Framework。
+    key_points:
+      - v0.4 分层：Core 负责事件驱动的消息传递和分布式运行时，AgentChat 是高层 API
+      - 早期经典组合：AssistantAgent 写代码，UserProxyAgent 执行代码并反馈
+      - 终止条件可组合，比如提到某个关键词，或由外部触发停止
+      - MagenticOne：主控用任务账本和进度账本跟踪计划与进度，停滞时重新规划
+      - Microsoft Agent Framework 合并了 AutoGen 和 Semantic Kernel
+    followups:
+      - 群聊模式下所有 Agent 共享全部历史，会有什么问题？
+
+  - id: agent-multi-crewai
+    q: CrewAI 的核心抽象有哪些？sequential 和 hierarchical 两种 process 有什么区别？
+    topics: [agent-framework, multi-agent]
+    difficulty: 2
+    answer_brief: >-
+      CrewAI 用团队隐喻：Agent 由 role、goal、backstory 定义，Task 描述要做的事和期望输出，Crew 把两者组织起来按 Process 执行。sequential 按任务顺序执行，前面的输出可作为后续任务的上下文；hierarchical 要指定 manager_llm 或 manager_agent，由经理 Agent 动态派活并验收。需要确定性流程控制时，用 Flows 编排多个 Crew。
+    key_points:
+      - Agent：role、goal、backstory + 工具 + 是否允许委派
+      - Task：description、expected_output，可指定执行 agent 和 context 依赖
+      - hierarchical：任务不预先分配，经理按能力派发并验收
+      - Flows：事件驱动，用 start、listen、router 装饰器控制顺序和分支，状态可持久化
+      - 优点是上手快、角色直观；细粒度控制和调试不如图框架
+    followups:
+      - 角色扮演式的 backstory 对效果真的有帮助吗？
+
+  - id: agent-multi-openai-agents-sdk
+    q: OpenAI Agents SDK 有哪些核心原语？它是怎么组织多 Agent 的？
+    topics: [agent-framework, multi-agent]
+    difficulty: 3
+    answer_brief: >-
+      OpenAI Agents SDK 是 2025 年 3 月推出的轻量框架，是实验项目 Swarm 的生产版，原语很少：Agent（指令 + 工具 + 模型）、Runner（跑 Agent 循环）、handoffs（移交控制权）、guardrails（输入输出校验）、sessions（会话记忆），默认开启 tracing。多 Agent 可用 handoff 让专家接管对话，或用 as_tool 把 Agent 当工具调用，也可用代码编排。
+    key_points:
+      - handoff 对模型暴露为工具，默认名是 transfer_to_<agent 名>
+      - handoff 默认把完整历史交给接收方，可用 input_filter 裁剪
+      - Agent.as_tool：主 Agent 保留控制权，专家只完成有边界的子任务
+      - 代码编排：结构化输出分类后分派、链式串联、评审循环、asyncio.gather 并行
+      - tracing 默认记录 agent、generation、工具调用、guardrail、handoff 等 span
+    followups:
+      - 什么时候用 handoff，什么时候用 as_tool？
+
+  - id: agent-multi-oai-guardrails
+    q: OpenAI Agents SDK 的 guardrails 是怎么工作的？输入和输出 guardrail 分别作用在哪里？
+    topics: [agent-framework, agent-safety]
+    difficulty: 3
+    answer_brief: >-
+      guardrail 是随 Agent 一起运行的校验函数，返回结果里带 tripwire_triggered 标志，一旦触发就抛异常中止运行。输入 guardrail 只作用于链路中的第一个 Agent，默认和 Agent 并行跑以降低延迟，也可配成先校验再启动 Agent；输出 guardrail 只作用于产出最终结果的最后一个 Agent。另有工具级 guardrail，在每次函数工具调用前后检查。
+    key_points:
+      - 触发时抛对应的 TripwireTriggered 异常，输入、输出各有一种，调用方捕获后处理
+      - 并行模式省时间，但 Agent 可能已经花了 token 或调用了工具
+      - run_in_parallel=False 的阻塞模式适合需要先拦截再执行的场景
+      - 常用便宜的小模型实现 guardrail，例如判断请求是否偏题
+      - guardrail 不能替代后端权限校验，高危工具仍要服务端控制
+    followups:
+      - 多 Agent 链路中间某个 Agent 产出了违规内容，guardrail 能拦住吗？
+
+  - id: agent-multi-claude-agent-sdk
+    q: Claude Agent SDK 是什么？和直接调用模型 API 自己写 Agent 循环有什么区别？
+    topics: [agent-framework, multi-agent]
+    difficulty: 3
+    answer_brief: >-
+      Claude Agent SDK 由 Claude Code SDK 在 2025 年改名而来，把驱动 Claude Code 的 Agent 循环、内置工具和上下文管理以 Python / TypeScript 库的形式开放。直接调 API 时工具循环要自己写；SDK 则自带读写文件、执行命令、搜索等工具，以及 hooks、权限控制、会话恢复、MCP 接入和子 Agent，适合需要操作文件和命令行的通用 Agent。
+    key_points:
+      - 子 Agent 通过 agents 参数定义：description、prompt、tools、model
+      - 主 Agent 用 Agent 工具（旧名 Task）派活，子 Agent 从全新上下文开始
+      - 父传子只有任务描述字符串，子 Agent 只把最终消息交回父 Agent
+      - 可限制子 Agent 工具集，比如只给代码评审 Agent 只读工具
+      - hooks 在工具调用前后插入自定义逻辑，用于审计和拦截
+    followups:
+      - 子 Agent 还能再派子 Agent 吗？怎么限制这棵树的规模和花费？
+
+  - id: agent-multi-metagpt-sop
+    q: MetaGPT、ChatDev 这类「模拟软件公司」的多 Agent 框架是怎么设计的？有什么局限？
+    topics: [multi-agent, agent-framework]
+    difficulty: 3
+    answer_brief: >-
+      它们把人类团队的标准作业流程（SOP）编码进多 Agent：产品经理、架构师、工程师、测试等角色按流程接力，每个角色产出结构化文档（需求、设计、代码、测试报告）而不是闲聊。MetaGPT 用共享消息池加发布-订阅，让角色只订阅与自己相关的消息；ChatDev 用分阶段的对话链。局限是流程僵硬、成本高，角色扮演不保证正确，复杂真实项目仍容易出错。
+    key_points:
+      - SOP 化：把模糊协作变成固定阶段和明确交付物
+      - 结构化产出降低传话失真，下游有清晰输入
+      - 发布-订阅消息池减少无关信息进入各角色上下文
+      - 运行代码、跑测试这类可执行反馈比纯对话评审可靠
+      - 局限：角色划分照搬人类组织，未必是对模型最优的分工
+    followups:
+      - 如果让你重做，你会保留哪些设计、去掉哪些？
+
+  - id: agent-multi-lowcode-platforms
+    q: Dify、Coze 这类低代码 Agent 平台适合什么场景？什么时候应该换成代码框架？
+    topics: [agent-framework]
+    difficulty: 2
+    answer_brief: >-
+      Dify、Coze（扣子）提供可视化工作流画布、知识库和 RAG、插件与工具、多模型接入、一键发布成 API 或聊天应用以及日志监控，适合流程相对固定的业务应用快速验证和交付，非工程人员也能参与搭建。需要复杂的动态控制流、精细的上下文和状态管理、严格的测试与版本管理，或平台节点能力不够时，就该换成 LangGraph 这类代码框架或自研。
+    key_points:
+      - 优势：拖拽编排、内置 RAG 和插件生态、发布 API 方便、上手快
+      - Dify 开源可私有化部署，许可证是带附加条件的 Apache 2.0
+      - 字节在 2025 年 7 月以 Apache 2.0 开源了 Coze Studio 和 Coze Loop
+      - 局限：复杂逻辑在画布上难维护，难做代码级测试和 diff 评审
+      - 折中：平台负责编排，复杂节点调用自建服务或代码节点
+    followups:
+      - 低代码平台上的工作流怎么做版本管理和回归测试？
+
+  - id: agent-multi-framework-selection
+    q: 做 Agent 项目时，LangGraph、CrewAI、AutoGen、OpenAI Agents SDK 这些框架你怎么选？
+    topics: [agent-framework]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      先看控制粒度：需要显式状态、循环、持久化和人工介入的流程选 LangGraph 这类图运行时；想快速搭角色协作原型可用 CrewAI；以 handoff 和 guardrail 为主的轻量应用适合 OpenAI Agents SDK；需要文件和命令行能力的通用 Agent 可用 Claude Agent SDK。再看模型厂商绑定、可观测性、持久化与部署方式、社区活跃度和 API 稳定性；AutoGen 已转入维护，新项目要慎选。
+    key_points:
+      - 控制力与上手速度的取舍：图框架可控，高层角色框架快
+      - 状态与持久化：是否内置 checkpoint、中断恢复、人工介入
+      - 可观测性：trace 是否完整，能否导出到自有平台
+      - 厂商绑定：换模型是否方便，框架是否由某家模型厂商主导
+      - 维护状态：API 是否稳定，项目是否仍在积极维护
+    followups:
+      - 你项目里为什么选了这个框架？踩过什么坑？
+
+  - id: agent-multi-no-framework
+    q: 什么时候应该不用框架，直接基于模型 API 手写 Agent？
+    topics: [agent-framework, agent]
+    difficulty: 3
+    answer_brief: >-
+      Agent 逻辑不复杂（一个工具调用循环加少量路由）、需要完全掌控提示词和上下文、或框架抽象反而挡住排查时，直接用 API 手写更好：几百行代码就能实现循环、工具调度和重试，发给模型的内容全都看得见。Anthropic 的建议也是先直接用 LLM API，用框架就要搞懂它底层做了什么。框架的价值在持久化、人工介入、追踪、多 Agent 编排这些自己造轮子成本高的部分。
+    key_points:
+      - 手写优点：提示词透明、依赖少、调试直接、升级不被框架牵制
+      - 框架优点：checkpoint、流式输出、人工介入、tracing、集成生态现成
+      - 常见坑：框架隐藏了实际发给模型的提示词，出错难定位
+      - 折中：核心循环自己写，持久化和追踪用独立的库补齐
+      - 无论用不用框架，上生产都要补重试限流、权限、审计、评测和成本监控
+    followups:
+      - 你手写 Agent 循环时，最先要处理的工程问题是什么？
+
+  # ---------- 场景设计 ----------
+  - id: agent-multi-design-deep-research
+    q: 场景题：设计一个类似 Deep Research 的多 Agent 调研系统，你会怎么设计？
+    type: system-design
+    topics: [multi-agent, agent, rag]
+    difficulty: 4
+    hot: true
+    answer_brief: >-
+      用 orchestrator-worker：主控先澄清问题、制定调研计划并写入外部存储，按复杂度派出若干并行的搜索子 Agent，每个子 Agent 有明确的子问题、来源指引和输出格式，在独立上下文里多轮搜索、阅读、筛选后回传带引用的结论；主控汇总、发现缺口再派下一轮，最后单独一步给每个论断核对并补上引用。配套预算上限、trace 和以事实准确、引用、覆盖度为核心的评测。
+    key_points:
+      - 计划持久化：上下文快满时开新子 Agent，读回计划继续
+      - 子 Agent 并行 + 子 Agent 内并行工具调用，大幅缩短总耗时
+      - 回传结构化结论和引用，原始网页落盘，不进主上下文
+      - 来源质量控制：优先一手和权威来源，过滤内容农场
+      - 评测：LLM 评审按事实准确、引用、完整性打分，加人工抽检
+    followups:
+      - 子 Agent 一直搜索停不下来，怎么控制？
+      - 怎么检查最终报告里的引用真的支持对应论断？

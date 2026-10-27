@@ -1,0 +1,683 @@
+# yaml-language-server: $schema=../../../schema/questions.schema.json
+source:
+  name: open-interview · Agent 面试卡组
+  license: CC-BY-SA-4.0
+
+defaults:
+  lang: zh
+  type: technical
+  roles: [ai-agent]
+  topics: [agent]
+
+questions:
+  # ---------- 评估体系 ----------
+  - id: agent-eval-metric-dimensions
+    q: 评估一个 Agent 系统要看哪些维度的指标？只看任务成功率够吗？
+    topics: [agent, evaluation]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      不够。至少分四层：结果（任务成功率、答案正确与忠实）、过程（工具选择和参数是否正确、步数与冗余调用）、效率（端到端延迟、token 与成本）、安全与体验（越权 / 违规率、转人工率、用户反馈）。只看成功率会掩盖「碰巧做对」「绕远路烧钱」和「做对了但违规」三类问题。
+    key_points:
+      - 结果：task success，能用程序校验终态的优先程序校验
+      - 过程：工具选择准确率、参数正确率、步数、重复调用、错误恢复
+      - 效率：P50 / P95 延迟、token 成本、每个成功任务的平均成本
+      - 可靠性：同一任务多次运行的一致性（如 pass^k），不只看单次
+      - 安全与体验：违规 / 越权率、拒答率、转人工率、用户反馈
+    followups:
+      - 过程很乱但结果做对了，这条样本你怎么判？
+      - 多轮对话里「任务完成」怎么界定？
+
+  - id: agent-eval-trajectory
+    q: 什么是 Agent 的轨迹（trajectory）评估？具体有哪些做法？
+    topics: [agent, evaluation]
+    difficulty: 3
+    answer_brief: >-
+      轨迹评估看 Agent 是怎么完成任务的：调了哪些工具、顺序和参数对不对、有没有多余或危险的步骤。一类做法是和参考轨迹匹配（精确匹配、按序包含、无序包含、轨迹 precision / recall），另一类是让 LLM judge 按 rubric 给整条轨迹打分。同一任务常有多条合法路径，所以参考匹配要放宽，并和终态校验一起用。
+    key_points:
+      - 精确匹配：工具调用和顺序完全一致，最严、误杀多
+      - 按序匹配：参考步骤按相对顺序出现即可，允许插入额外调用
+      - 无序匹配 / recall：必要调用是否都出现；precision：多余调用占比
+      - LLM judge 看轨迹：是否先查后改、有无重复调用、是否越权
+      - 价值：定位失败环节，发现「结果对但过程危险」的样本
+    followups:
+      - 一个任务有多种合法解法时，参考轨迹怎么定？
+      - 轨迹评估和终态评估结论不一致时信哪个？
+
+  - id: agent-eval-tool-call-accuracy
+    q: 工具调用准确率怎么定义和计算？只看「调用成功」为什么不够？
+    topics: [agent, evaluation, tool-use]
+    difficulty: 3
+    answer_brief: >-
+      要拆成几个子指标：该不该调（需要时调用、无关时不乱调）、选没选对工具、参数是否合法且取值正确、返回结果有没有被正确使用。「调用成功」只说明接口没报错，参数语义错了照样成功，比如查错了用户、日期格式对但值错了。评测时参数用 AST / 字段比对或执行后比对状态，多步任务再看整体完成率。
+    key_points:
+      - 调用决策：需要时调用的召回率，无关请求时拒绝调用（irrelevance）
+      - 工具选择准确率：多个相似工具时有没有选对
+      - 参数：schema 合法率 + 按字段的取值正确率，允许等价写法
+      - 执行比对：在模拟环境里真跑一遍，比较状态变化
+      - 结果使用：有没有误读返回值，失败后是否合理重试或换路
+    followups:
+      - 参数里有自由文本（比如搜索 query）时怎么判对错？
+      - 工具数量一多，选择准确率下降怎么办？
+
+  - id: agent-eval-golden-set
+    q: Agent 的离线评测集（golden set）怎么建？冷启动没有线上日志时怎么办？
+    topics: [agent, evaluation]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      按「真实分布 + 重点场景」构建：覆盖高频正常路径、边界条件、多轮和异常（工具报错、信息缺失）、对抗样本（注入、越权请求）和高风险操作，每条都带可校验的期望（终态、关键事实、必须 / 禁止调用的工具）。冷启动时由领域专家写种子题，用 LLM 扩写变体再人工审核；上线后持续用线上 badcase 和抽样替换合成题。
+    key_points:
+      - 每条样本：输入、环境初始状态、期望结果或校验规则、场景 / 难度 / 风险标签
+      - 分层：冒烟集（几十条）、回归集（几百条）、全量集，按场景分桶统计
+      - 冷启动：专家种子题 + LLM 改写扩充 + 人工审核去重
+      - 防过拟合：留出一部分不参与 prompt 调优，定期补新样本
+      - 评测集版本化，和代码、prompt 一起评审变更
+    followups:
+      - LLM 合成的评测数据有什么偏差？怎么控制？
+      - 评测集要多大才能判断一次改动是否有效？
+
+  - id: agent-eval-llm-judge-setup
+    q: LLM-as-a-judge 一般怎么设计？pointwise、pairwise 和带参考答案的评分各适合什么场景？
+    topics: [agent, evaluation]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      pointwise 对单条输出按 rubric 打分，适合监控和设绝对门槛；pairwise 比较两个版本谁更好，适合 A/B 选型，更稳定但不给绝对分；reference-based 给出参考答案让 judge 判一致性，适合有标准答案的事实类任务。设计上要拆清评分维度、让 judge 先写理由再给分，尽量用二元或少档位判断而不是 1-10 分。
+    key_points:
+      - rubric 拆成独立维度（正确、忠实、完整、语气），每维单独判
+      - 先推理后打分，输出结构化 JSON 方便统计
+      - 二元 / 三档比 1-10 分更稳定，也更容易和人工对齐
+      - pairwise 交换顺序各判一次，减小位置偏差
+      - 能用规则或代码校验的指标不要交给 judge
+    followups:
+      - judge 用哪个模型？能用被评模型自己当 judge 吗？
+      - judge 的调用成本怎么控制？
+
+  - id: agent-eval-judge-bias
+    q: LLM-as-a-judge 有哪些典型偏差？分别怎么缓解？
+    topics: [agent, evaluation]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      经典的三类：位置偏差（pairwise 时偏好某个位置的答案）、冗长偏差（偏好更长、看起来更全面的回答）、自我偏好（偏好自己或同家族模型的输出）；此外 judge 对格式和自信语气敏感，数学推理题上也常判错。缓解：交换顺序取一致结论、rubric 明确不按长度给分、换不同家族模型或多 judge 投票、难题给参考答案，并定期用人工标注集检验。
+    key_points:
+      - 位置偏差：AB / BA 各判一次，结论不一致记为平局
+      - 冗长偏差：rubric 写明冗余扣分，或控制长度后再比较
+      - 自我偏好：judge 与被评模型不同源，或多模型投票
+      - 推理弱：给参考答案或可执行校验，不让 judge 自己算
+      - 出处：Zheng et al. 2023（MT-Bench / Chatbot Arena）系统分析了这些偏差
+    followups:
+      - 怎么量化 judge 的位置偏差有多严重？
+      - 多个 judge 意见不一致时怎么聚合？
+
+  - id: agent-eval-judge-calibration
+    q: LLM judge 的打分和人工标注不一致时怎么办？怎么校准一个 judge？
+    topics: [agent, evaluation]
+    difficulty: 3
+    answer_brief: >-
+      以人工为基准：抽一批样本人工标注，算 judge 与人工的一致率或 Cohen's kappa，按维度和场景找出分歧最大的样本。再迭代 judge：澄清 rubric、补少样本示例、把模糊档位改成二元判断、提供参考答案，一致性达标后才用于自动评测。上线后持续人工抽检，judge 的模型或 prompt 一变就重新校准。
+    key_points:
+      - 指标：一致率、Cohen's kappa（分类），Spearman 相关（打分）
+      - 分歧归因：rubric 不清、人工标注噪声，还是 judge 能力不足
+      - 人工也要校准：多人标注，人与人的一致率是 judge 的上限参考
+      - 把 judge 当作有版本、有测试集的组件来维护
+      - 高风险维度保留人工终审，judge 只做初筛
+    followups:
+      - 人与人之间的一致率本身就很低时怎么办？
+      - 能不能只把 judge 低置信的样本送人工？
+
+  - id: agent-eval-online-signals
+    q: Agent 上线后没有人工标注，怎么持续评估线上效果？
+    topics: [agent, evaluation]
+    difficulty: 3
+    answer_brief: >-
+      组合三类信号：显式反馈（点赞点踩、评分、投诉）、隐式行为（重新生成、改写追问、放弃会话、转人工、业务结果如退款是否真正完成）、自动评估（对抽样流量异步跑 LLM judge 和规则检查）。显式反馈稀疏且偏向极端体验，所以以隐式行为和自动抽检为主，可疑会话再送人工复核。
+    key_points:
+      - 显式：点踩率、投诉率，量少且有选择偏差
+      - 隐式：重新生成率、会话放弃率、转人工率、任务完结率
+      - 业务结果：工单解决率、复购 / 留存、后续是否重复来问
+      - 在线 judge：按比例抽样异步评估，不阻塞主链路
+      - 异常会话自动进人工审核队列，确认后进评测集
+    followups:
+      - 隐式信号有歧义（复制答案不一定代表满意）怎么处理？
+      - 在线 judge 的抽样比例怎么定？
+
+  - id: agent-eval-ab-test
+    q: 给 Agent 换模型或改 prompt 后做线上 A/B 测试，要注意哪些问题？
+    topics: [agent, evaluation]
+    difficulty: 3
+    answer_brief: >-
+      先定主指标（如任务完成率）和护栏指标（延迟、成本、违规率、转人工率），按用户或会话随机分流，保证同一用户体验一致。LLM 输出随机、方差大，要事先估算样本量、跑满观测周期，并警惕新奇效应和分流不均。高风险改动先过离线评测和小流量灰度，护栏指标恶化就自动停止实验。
+    key_points:
+      - 分流单位用用户或会话，避免同一人看到多个版本
+      - 主指标 + 护栏指标，成本和延迟必须一起看
+      - 输出随机性大：样本量预估、显著性检验、跑满周期
+      - 多轮任务的结果指标滞后，提前定义观测窗口
+      - 流程：离线评测 → 小流量灰度 → A/B 扩量 → 全量
+    followups:
+      - 主指标提升了，但成本涨了 30%，怎么决策？
+      - 流量很小的 B 端产品怎么做实验？
+
+  - id: agent-eval-offline-replay-canary
+    q: 离线评测、Trace 回放和线上灰度分别解决什么问题？一次 prompt 或模型变更怎么走完这三步？
+    topics: [agent, evaluation]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      离线评测用固定评测集快速比较版本，回答「整体有没有回归」；Trace 回放把真实线上请求（含上下文和工具返回）重放到新版本，回答「在真实分布上哪些 case 变了」；灰度用小比例真实流量验证线上指标、延迟、成本和意外行为。流程：离线过门槛 → 回放审 diff → 1%-5% 灰度并监控 → 逐步放量，随时可回滚。
+    key_points:
+      - 离线：快、可重复，但覆盖有限、可能过拟合评测集
+      - 回放：工具返回用录制结果或 mock，避免真实副作用
+      - 回放重点看新旧输出不同的样本，人工或 judge 复核
+      - 灰度：暴露真实用户行为和长尾，配自动回滚阈值
+      - 每次变更记录模型、prompt、检索、代码版本
+    followups:
+      - 回放时遇到写操作类工具怎么处理？
+      - 灰度期间指标下降但不显著，要不要回滚？
+
+  - id: agent-eval-ci-regression
+    q: 把 Agent 评测放进 CI 做回归测试时，怎么控制成本、耗时和结果不稳定？
+    topics: [agent, evaluation]
+    difficulty: 3
+    answer_brief: >-
+      分层跑：每次提交只跑几十条冒烟集和确定性断言（schema、工具调用格式、规则检查），合并前或夜间再跑完整回归集和 LLM judge。固定 temperature 只能降低波动、不能消除，关键样本多跑几次看通过率，门槛定为「相对基线的显著下降」而非单次绝对分。外部工具用录制或 mock，并只对受改动影响的场景跑评测。
+    key_points:
+      - 分层：提交级冒烟 → 合并前回归 → 夜间全量 + 人工抽查
+      - 确定性断言优先，judge 只用于开放式输出
+      - 多次运行取通过率，设容忍区间避免 flaky 阻塞合并
+      - mock / 录制工具返回，隔离外部依赖和副作用
+      - 按改动影响面选子集，未变部分复用缓存结果
+    followups:
+      - 评测预算不够时，你会先砍掉哪些？
+      - 怎么判断一条用例是 flaky 还是真的退化？
+
+  # ---------- 公开 benchmark ----------
+  - id: agent-eval-swe-bench
+    q: SWE-bench 测的是什么？SWE-bench Verified 和原版有什么区别？
+    topics: [agent, evaluation]
+    difficulty: 2
+    answer_brief: >-
+      SWE-bench 取自真实 GitHub Python 仓库的 issue 和对应修复 PR：给 Agent 代码库和 issue 描述，让它生成补丁，再跑测试判定，要求原本失败的测试（FAIL_TO_PASS）通过、原本通过的测试（PASS_TO_PASS）不被破坏。原版 2,294 题，部分题描述不清或测试过严；OpenAI 2024 年请开发者人工筛出 500 道合理可解的子集，即 Verified。
+    key_points:
+      - 原版来自 12 个流行 Python 仓库，另有 300 题的 Lite 子集
+      - 完全执行式评测：在 Docker 环境里打补丁、跑测试
+      - 2026-02 OpenAI 称 Verified 已被污染且测试有缺陷，改推 SWE-bench Pro
+      - 分数强依赖 scaffold（工具、流程、尝试次数），不同报告难直接比
+      - 局限：以 Python 修 bug 为主，不测需求理解和长期维护
+    followups:
+      - 为什么同一个模型在不同 scaffold 下 SWE-bench 分数差很多？
+      - benchmark 被污染后，怎么判断模型真实的编码能力？
+
+  - id: agent-eval-gaia
+    q: GAIA benchmark 测什么？它和传统 QA benchmark 有什么不同？
+    topics: [agent, evaluation]
+    difficulty: 2
+    answer_brief: >-
+      GAIA（General AI Assistants，2023 年由 Meta、Hugging Face 等提出）有 466 道真实世界问题，需要浏览网页、解析文件（PDF、表格、图片）和多步推理等工具组合才能解出，但答案是简短唯一的字符串或数字，可精确匹配自动判分。特点是「对人简单、对 AI 难」：论文中人类约 92%，带插件的 GPT-4 约 15%。
+    key_points:
+      - 三个难度级：Level 1 约 5 步内、最多 1 个工具；Level 3 需任意长动作序列
+      - 答案短且唯一，用精确匹配评分，避免主观评判
+      - 测通用助手能力：检索 + 工具 + 多模态 + 推理的组合
+      - 300 题答案不公开，只用于排行榜，减少泄漏
+      - 依赖开放网络，网页内容变化可能影响题目可解性
+    followups:
+      - GAIA 和 SWE-bench 测的能力有什么不同？
+
+  - id: agent-eval-tau-bench
+    q: τ-bench 测的是什么？它提出的 pass^k 指标和 pass@k 有什么区别？
+    topics: [agent, evaluation]
+    difficulty: 3
+    answer_brief: >-
+      τ-bench（Sierra，2024）模拟客服场景：Agent 拿到领域政策文档和一组 API 工具（零售、航空两个领域），另一个 LLM 按隐藏剧本扮演用户，多轮对话结束后比较数据库终态与目标状态判成败。pass^k 是同一任务独立跑 k 次「全部成功」的概率，pass@k 是「至少一次成功」；前者衡量可靠性，能暴露单次尚可、多次就不稳的问题。
+    key_points:
+      - 三要素：工具 API、必须遵守的领域政策、LLM 模拟用户
+      - 判分看数据库终态，而不是对话文本
+      - pass^k 随 k 增大明显下降，说明 Agent 一致性差
+      - τ²-bench（2025）加入电信领域，用户也能操作工具（dual-control）
+      - 生产 Agent 更该关注 pass^k，用户不会只给你一次机会
+    followups:
+      - 用 LLM 模拟用户做评测有什么问题？
+      - 怎么在自己的业务里做类似 τ-bench 的评测？
+
+  - id: agent-eval-webarena-osworld
+    q: WebArena 和 OSWorld 分别评测什么能力？它们怎么判定任务成功？
+    topics: [agent, evaluation, multimodal]
+    difficulty: 3
+    answer_brief: >-
+      两者都是可交互环境里的执行式评测。WebArena（CMU，2023）自托管电商、论坛、GitLab、内容管理后台、地图等网站，共 812 个任务，Agent 通过浏览器完成，靠检查网站终态或答案判分。OSWorld（2024）在真实操作系统虚拟机里给出 369 个跨桌面应用、文件和多应用协作的任务，Agent 看截图用键鼠操作，每个任务有专门脚本检查最终状态。
+    key_points:
+      - WebArena 看功能正确性，不比对动作序列，任何合法路径都算
+      - WebArena 论文：GPT-4 约 14%，人类约 78%
+      - OSWorld 是多模态 GUI Agent 评测，难点在界面定位和操作知识
+      - OSWorld 论文：人类约 72%，当时最佳模型约 12%
+      - 两者都有 Verified 修订版，比较分数先看版本和 scaffold
+    followups:
+      - computer-use Agent 和 API 调用型 Agent 的评测难点有什么不同？
+
+  - id: agent-eval-bfcl
+    q: BFCL（Berkeley Function Calling Leaderboard）评测什么？它怎么判断函数调用是否正确？
+    topics: [agent, evaluation, tool-use]
+    difficulty: 2
+    answer_brief: >-
+      BFCL 是 UC Berkeley Gorilla 团队维护的函数调用排行榜，评测模型把自然语言转成正确工具调用的能力：单函数、多候选选择、并行调用，以及给出无关工具时不调用（irrelevance）。判分主要用 AST 比对（解析函数名和参数，与可接受答案集合比较）或执行 / 状态比对；V3 加入多轮多步调用，V4 加入 web 搜索、记忆、格式敏感性等 agentic 场景。
+    key_points:
+      - 基础类别：simple、multiple、parallel、parallel multiple
+      - irrelevance：工具都不相关时，模型应该不调用
+      - AST 评估不需要真执行，便宜且确定；执行评估更贴近真实
+      - 多轮部分考察状态跟踪、缺参时追问
+      - 只测调用本身，高分不等于端到端任务能做好
+    followups:
+      - 你会怎么设计自己业务的工具调用评测集？
+
+  - id: agent-eval-benchmark-pitfalls
+    q: 为什么不能只看公开 benchmark 分数来给 Agent 选模型？
+    topics: [agent, evaluation]
+    difficulty: 2
+    answer_brief: >-
+      三个问题：数据污染（题目和答案可能进了训练集，分数虚高）、饱和与题目缺陷（头部分数接近上限、部分题本身判错）、与业务分布不一致（你的工具、领域知识、语言和约束都不同）。另外 Agent 类分数高度依赖 scaffold、提示词和尝试次数，厂商自报分数常不可比。公开榜只适合初筛，最终要靠自建评测集和线上实验决定。
+    key_points:
+      - 污染检测：看模型能否复述原题答案，或用发布日期之后的新题
+      - 饱和：分数差距落在噪声范围内就没有区分度
+      - scaffold、尝试次数、工具配置不同，分数不能横向比
+      - 公开榜通常不报成本、延迟和多次运行的稳定性
+      - 做法：公开榜初筛 → 自建评测集 → 灰度 / A/B
+    followups:
+      - 怎么检测一个模型是否被某个 benchmark 污染？
+
+  # ---------- 幻觉 ----------
+  - id: agent-eval-hallucination-detect
+    q: 怎么检测和度量 LLM / Agent 输出里的幻觉？
+    topics: [agent, evaluation, llm]
+    difficulty: 3
+    answer_brief: >-
+      有依据时测忠实度：把回答拆成原子事实，逐条用 NLI 模型或 LLM judge 判断能否被检索上下文、工具返回支撑，不被支撑的比例即幻觉率，引用也要核验是否真的支持所述内容。没有外部依据时用自洽性方法，如多次采样比一致性（SelfCheckGPT）或语义熵。Agent 还要查「虚构工具结果」：声称查到的数据在 trace 里并不存在。
+    key_points:
+      - 原子事实拆分 + 逐条核验（FActScore 的思路）
+      - 有上下文：faithfulness / groundedness，引用精确率
+      - 无上下文：多次采样一致性、语义熵，代价是成本成倍增加
+      - Agent 特有：回答中的数字、状态与 trace 里的工具返回逐项对账
+      - 线上抽样检测，离线用带标准答案的事实题
+    followups:
+      - NLI 模型和 LLM judge 做忠实度检测各有什么问题？
+
+  - id: agent-eval-hallucination-mitigate
+    q: 在高准确性要求的业务里，你会用哪些手段降低 Agent 的幻觉？
+    topics: [agent, agent-safety, llm]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      思路是让模型少凭记忆说话、说了能验证、不确定就不说。具体：用检索或工具获取事实并要求带引用；关键数据（金额、订单状态）由代码从工具结果直接填充，不让模型复述；生成后做引用核对、规则检查或二次模型核验；允许「不知道」，低置信时澄清或转人工。效果用幻觉率、引用准确率和拒答率一起评估。
+    key_points:
+      - grounding：RAG / 工具查询，答案必须引用来源
+      - 关键字段模板化：数字和状态由代码填充，模型只写说明
+      - 生成后校验：引用是否支持结论、数值是否与工具结果一致
+      - 允许拒答和澄清，低置信转人工
+      - 降低 temperature 只减少随机性，不能消除幻觉
+    followups:
+      - 拒答率上升和幻觉率下降怎么平衡？
+      - 用了 RAG 为什么还会幻觉？
+
+  # ---------- 可观测 ----------
+  - id: agent-eval-trace-fields
+    q: 为了排查和回放问题，一次 Agent 请求的 trace 至少要记录哪些数据？
+    topics: [agent, evaluation]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      trace 要能还原「模型当时看到了什么、做了什么」。以请求为根 span，下挂每次 LLM 调用（模型与参数、完整输入、输出、token 用量、耗时、结束原因）、每次工具调用（名称、参数、返回、错误、耗时）、检索（query、召回文档 ID 与分数）。同时记录模型、prompt、工具 schema、代码、知识库的版本，以及用户、会话、租户 ID，敏感字段脱敏。
+    key_points:
+      - 层级：request → agent step → LLM / tool / retrieval span
+      - LLM span：model、temperature、输入输出、tokens、延迟、stop reason
+      - tool span：名称、参数、结果摘要、错误码、重试次数
+      - 版本信息（prompt 版本、模型快照、配置 hash）支撑回放和归因
+      - 用户反馈和评估分数挂回同一个 trace ID
+    followups:
+      - 完整记录 prompt 和输出会带来什么存储和合规问题？
+      - 多 Agent 系统里怎么定位是哪个子 Agent 出的错？
+
+  - id: agent-eval-otel-platforms
+    q: Agent 的 tracing 怎么接 OpenTelemetry？LangSmith、Langfuse 这类 LLM 可观测平台比传统 APM 多了什么？
+    topics: [agent, evaluation]
+    difficulty: 3
+    answer_brief: >-
+      OpenTelemetry 有 GenAI 语义约定，用 gen_ai.* 属性描述模型调用（模型名、token 用量等），并定义了 invoke_agent、execute_tool 等操作类型，按约定打点即可接入兼容 OTel 的后端（该约定仍是 Development 状态）。LangSmith、Langfuse 等平台在 trace 上加了 LLM 专用能力：完整 prompt 与输出、成本统计、prompt 版本、数据集评测、人工标注。
+    key_points:
+      - 典型属性：gen_ai.request.model、gen_ai.usage.input_tokens
+      - 消息内容默认不采集，需显式开启（涉及隐私）
+      - LangSmith 来自 LangChain，以托管为主；Langfuse 开源、可自托管
+      - 平台能力：会话级 trace、成本看板、数据集、在线评估、标注队列
+      - 选型看：能否自托管 / 数据不出域、框架绑定程度、采样与存储成本
+    followups:
+      - 自建可观测还是用托管平台，你怎么选？
+
+  - id: agent-eval-quality-drop-rca
+    q: Agent 线上质量突然下降，你怎么定位是模型、prompt、检索、工具还是数据分布的问题？
+    topics: [agent, evaluation]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      先对齐时间线：下降点是否对应某次变更（prompt、模型版本、工具、知识库），有版本记录就回滚对照。再按链路分层：把失败 trace 分类，看是检索没召回、工具报错或返回格式变了、模型不遵循指令，还是输入分布变了（新意图、新用户群）。最后用固定评测集复测：评测集不降而线上降，多半是分布漂移；评测集也降，就是系统本身变了。
+    key_points:
+      - 变更：模型供应商静默更新、prompt / 配置 / 知识库发布
+      - 检索：召回率、空召回比例、索引更新失败
+      - 工具：错误率、延迟、返回格式变化、限流
+      - 模型：格式错误率、指令遵循率、拒答率是否突变
+      - 分布：意图分布、输入长度、语言占比与基线对比
+    followups:
+      - 模型 API 版本号没变但效果变了，可能是什么原因？
+      - 怎么在用户投诉前自动发现质量下降？
+
+  - id: agent-eval-badcase-flywheel
+    q: 线上 badcase 怎么形成「发现 → 归因 → 修复 → 回归」的闭环？
+    topics: [agent, evaluation]
+    difficulty: 2
+    answer_brief: >-
+      发现靠多渠道汇集：用户负反馈、在线 judge 低分、规则告警、人工抽检，统一进 badcase 池。归因时按环节打标签（意图、检索、工具、生成、安全），按频次和严重度排序。修复按成本从低到高：工程或规则修复、prompt 和工具描述调整、检索优化，最后才考虑微调。修好的 case 脱敏后加入回归集，防止以后再犯。
+    key_points:
+      - badcase 池字段：来源、trace 链接、环节标签、负责人、状态
+      - 标签体系决定能否统计出主要问题在哪
+      - 修复优先级：出现频率 × 严重程度，高风险优先
+      - 修复后进回归集，防止后续改动导致回退
+      - 数据回流需脱敏，并符合用户授权范围
+    followups:
+      - 什么情况下你会选择微调，而不是改 prompt？
+
+  - id: agent-eval-version-binding
+    q: 为什么 prompt 要做版本管理？评测记录和线上 trace 为什么要绑定模型、prompt、检索配置和代码版本？
+    topics: [agent, evaluation]
+    difficulty: 2
+    answer_brief: >-
+      LLM 应用的行为由模型、prompt、工具定义、检索配置和代码共同决定，任何一项变化都会改变输出。不绑定版本，评测分数没法比，线上问题没法复现和归因，也没法精准回滚。做法是把 prompt 当代码管理（版本号、评审、变更记录），模型钉死具体快照而不用别名，每次评测和每条 trace 都记录完整配置版本。
+    key_points:
+      - prompt 模板与变量分离，模板有版本号和变更说明
+      - 模型用具体快照版本，升级当作一次独立发布
+      - 配置组合生成 hash，写入 trace 和评测记录
+      - prompt 发布同样走灰度和回滚
+      - 评测报告注明配置，避免「版本不明」的分数对比
+    followups:
+      - prompt 放代码仓库还是配置中心？各有什么利弊？
+
+  # ---------- 成本与延迟 ----------
+  - id: agent-eval-cost-levers
+    q: Agent 的 token 成本太高，你会从哪些方面优化？
+    topics: [agent, inference]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      先度量再优化：按功能、模型、步骤统计 token，找出大头，通常是反复携带的长上下文、冗长的工具返回和多余的循环步数。然后：让固定前缀命中 prompt caching；压缩上下文（摘要历史、裁剪工具返回、按需加载工具定义）；用模型路由把简单步骤交给小模型；设步数和预算上限；离线任务走批处理接口。
+    key_points:
+      - 成本归因到租户、功能、模型、prompt 版本和 Agent 步骤
+      - 缓存：前缀缓存、语义缓存、只读工具结果缓存
+      - 上下文瘦身：历史摘要，工具返回只保留需要的字段
+      - 路由：分类、抽取等简单步骤用小模型
+      - 预算护栏：最大步数、单任务 token 上限、超限熔断
+      - 非实时任务用 Batch API，价格通常更低
+    followups:
+      - 降本之后怎么证明质量没有下降？
+
+  - id: agent-eval-cache-layers
+    q: prompt caching（前缀缓存）、语义缓存和工具结果缓存有什么区别？各有什么坑？
+    topics: [agent, inference]
+    difficulty: 3
+    answer_brief: >-
+      prompt caching 在推理侧复用相同前缀的 KV cache，请求开头完全一致才命中，能降成本和首 token 延迟，但前缀里任何变化（时间戳、工具列表顺序变动）都会让之后的部分失效。语义缓存在应用层按 query 相似度直接返回历史答案，省掉整次调用，但有答错（相似不等于相同）、过期和跨用户泄露的风险。工具结果缓存只适合只读查询，要设 TTL 并按参数和用户隔离。
+    key_points:
+      - 前缀缓存：系统提示、工具定义等稳定内容放前，动态内容放后
+      - Anthropic 显式加 cache_control，默认缓存 5 分钟
+      - OpenAI 对超过 1024 token 的前缀自动缓存，无需改请求
+      - 语义缓存阈值要严，适合 FAQ，不适合个性化或强时效问题
+      - 缓存键要包含租户 / 权限范围，防止越权命中
+      - 工具结果缓存只用于只读、幂等的查询
+    followups:
+      - 多 Agent 工作流里，哪些操作最容易破坏前缀缓存？
+
+  - id: agent-eval-model-routing
+    q: 模型路由（model routing）怎么做？怎么避免把难题分给能力不够的小模型？
+    topics: [agent, inference]
+    difficulty: 3
+    answer_brief: >-
+      常见三种：规则路由（按任务类型、租户等级、输入长度）、分类器路由（训练小模型预测难度或该用哪个模型）、级联（先用小模型，置信度低或校验失败再升级大模型）。防误分配靠：用离线评测集测各模型在各类任务上的表现来定策略，对小模型输出做格式和质量校验并允许升级重试，线上按路由分支分别监控质量。
+    key_points:
+      - 规则路由简单可解释；分类器路由更细，但需要标注数据
+      - 级联：平均成本低，但失败升级的请求尾延迟更高
+      - 路由信号：任务类型、上下文长度、工具数量、历史失败率
+      - 按分支监控质量，防止流量被悄悄导向弱模型
+      - 高风险任务固定走强模型，不参与降本路由
+    followups:
+      - LLM Gateway 和 LLM Router 有什么区别？
+
+  - id: agent-eval-latency
+    q: Agent 端到端延迟太高，有哪些优化手段？
+    topics: [agent, inference]
+    difficulty: 2
+    answer_brief: >-
+      Agent 延迟约等于「LLM 调用次数 × 每次生成时长 + 工具耗时」，所以重点是减少串行步骤、缩短每一步。手段：流式输出改善首字体验；无依赖的工具调用并行发出；减少规划轮数，能用固定 workflow 的不用自由循环；简单步骤用快的小模型；前缀缓存缩短预填充；限制输出长度和思考预算；慢任务改异步并推送进度。
+    key_points:
+      - 指标拆开看：TTFT、每步耗时、工具耗时、总时长 P95
+      - 并行工具调用：一轮内发出多个互不依赖的调用
+      - 流式只改善感知延迟，不减少总耗时和 token
+      - 推理模型的思考 token 常是延迟大头，按任务设预算
+      - 长任务异步化：任务队列 + 进度回调
+    followups:
+      - 大模型更准但更慢时，延迟和效果怎么权衡？
+
+  # ---------- 可靠性 ----------
+  - id: agent-eval-retry-policy
+    q: 调用模型 API 或工具失败时，哪些错误该重试、哪些不该？重试策略怎么设计？
+    topics: [agent, high-availability]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      该重试的是临时性错误：网络超时、连接重置、429 限流、5xx 和服务过载；不该重试的是确定性错误：400 参数错误、401 / 403 鉴权失败、上下文超长、被安全策略拒绝，重试只会浪费钱，应修正请求或降级。重试用指数退避加随机抖动，优先遵守 Retry-After，设最大次数和总超时预算；非幂等写操作没有幂等键时不能盲目重试。
+    key_points:
+      - 指数退避 + jitter，避免大量客户端同时重试造成雪崩
+      - 429 时遵守 Retry-After，或切换备用 key / 区域 / 模型
+      - 重试预算：最大次数 + 整体 deadline，防止层层放大
+      - 结构化输出解析失败：带上错误信息让模型修正，限 1-2 次
+      - 写操作要带幂等键，或先查状态再决定是否重试
+    followups:
+      - SDK、网关、业务层都有重试，会出现什么问题？
+
+  - id: agent-eval-idempotency
+    q: Agent 执行写操作时超时了、结果不确定，怎么保证不会重复执行（比如重复扣款）？
+    topics: [agent, high-availability]
+    difficulty: 3
+    answer_brief: >-
+      核心是幂等：每个写操作调用前由编排代码生成唯一幂等键（基于任务 ID 和步骤，而不是让模型生成），下游按键去重，重复请求返回首次结果。超时后不直接重试，先按幂等键或业务单号查状态，确认未执行再重试；下游不支持幂等时，记录「已发起」并转人工核对。任务状态持久化，崩溃后从检查点恢复而不是整个重跑。
+    key_points:
+      - 幂等键持久化，模型重新规划时同一动作复用同一个键
+      - 超时不等于失败：先查状态，再决定是否重试
+      - 状态机：pending → submitted → confirmed / failed，每步落库
+      - 不可逆操作尽量拆成「预留 + 确认」两阶段
+      - 无法确认结果时暂停并转人工，不要猜
+    followups:
+      - 模型重新规划时又生成了一次同样的退款调用，怎么拦住？
+
+  - id: agent-eval-fallback
+    q: 模型 fallback 和服务降级怎么设计？哪些任务不能自动降级？
+    topics: [agent, high-availability]
+    difficulty: 3
+    answer_brief: >-
+      分层降级：换区域或供应商的同款模型 → 同级备用模型 → 小模型或精简流程 → 缓存 / 模板答案 → 排队稍后处理或转人工。触发条件是错误率、超时、限流或熔断器打开，主服务恢复后经健康检查逐步回切。医疗、法律、金融决策和高风险写操作不能悄悄降级，弱模型可能给出错误结论，应明确告知用户、延后或转人工。
+    key_points:
+      - 熔断：错误率超阈值打开，半开状态放少量请求试探
+      - 备用模型要提前用评测集验证，prompt 可能需要单独适配
+      - 降级事件写进 trace，事后能分析质量变化
+      - 回切逐步放量，避免刚恢复的服务再被打垮
+      - 高风险任务失败时宁可拒绝或延后，也不降级执行
+    followups:
+      - 备用模型的输出格式和主模型不一致怎么办？
+
+  - id: agent-eval-rate-limit
+    q: 大模型服务的限流为什么不能只按 QPS 做？流量突增时怎么保护核心请求？
+    topics: [agent, high-availability]
+    difficulty: 3
+    answer_brief: >-
+      LLM 请求成本差异巨大：一次可能几百 token，也可能几十万 token、持续几十秒，只按 QPS 会被长请求打满。要同时限 RPM、TPM（输入和输出 token）、并发数和租户预算，这也和上游供应商的配额维度一致。突增时按优先级排队：核心业务和付费用户优先，低优先级延后、走小模型或批处理，并给单用户设配额防滥用。
+    key_points:
+      - 四个维度：RPM、TPM、并发数、日 / 月预算
+      - 按预估 token 预扣配额，结束后按实际用量结算
+      - 优先级队列 + 排队超时丢弃，防止队列无限堆积
+      - 多 key、多区域、多供应商分摊配额
+      - 限制单个 Agent 任务的步数，防止单用户耗尽配额
+    followups:
+      - 输出 token 事先不知道，TPM 限流怎么预估？
+
+  # ---------- 安全 ----------
+  - id: agent-eval-injection-types
+    q: 直接 prompt injection、间接 prompt injection 和越狱（jailbreak）分别是什么？有什么区别？
+    topics: [agent, agent-safety]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      直接注入是用户本人在输入里写指令，想覆盖系统提示，比如「忽略之前的指令」；间接注入是攻击者把指令藏在 Agent 会读取的外部内容里（网页、邮件、文档、工具返回），用户并不知情，而 Agent 会带着用户的权限去执行，危害更大。越狱是绕过模型自身的安全对齐、让它输出被禁止的内容；注入是劫持应用的指令和行为，两者手法有重叠但威胁模型不同。
+    key_points:
+      - 根因：模型无法可靠区分「指令」和「数据」，它们在同一个上下文里
+      - 间接注入载体：网页隐藏文字、邮件、PDF、代码注释、工具描述
+      - 越狱攻击模型的安全策略，注入攻击应用的业务逻辑
+      - Agent 有工具权限，注入后果从「说错话」变成「做错事」
+      - OWASP LLM Top 10（2025）把 Prompt Injection 列为第一项
+    followups:
+      - 为什么 RAG 系统特别容易受间接注入？
+
+  - id: agent-eval-injection-defense
+    q: 在系统架构层面怎么防御 Agent 的 prompt injection？为什么只靠 prompt 和过滤器不够？
+    topics: [agent, agent-safety]
+    difficulty: 4
+    hot: true
+    answer_brief: >-
+      过滤器和「请忽略外部指令」都是概率性防御，总有绕过方式，所以要假设注入会成功，在架构上限制它能造成的后果。核心做法：最小权限；隔离不可信内容，读不可信数据的模型不能直接调用高危工具（Dual LLM、CaMeL）；先定计划再读数据（plan-then-execute）；高风险动作人工确认；对外通信走白名单。
+    key_points:
+      - spotlighting（分隔符、数据标记、编码）标记不可信内容，只能降低风险
+      - Dual LLM：隔离模型处理不可信文本，特权模型只用变量引用其结果
+      - CaMeL：从可信 query 生成程序，用 capability 控制数据流向
+      - 兜底在执行层：权限、参数校验、确认、审计都由后端强制
+      - 用 AgentDojo 这类基准同时测攻击成功率和受攻击时的效用
+    followups:
+      - 这些防御会牺牲多少 Agent 的灵活性？怎么权衡？
+      - 浏览器 Agent 要读任意网页，怎么防注入？
+
+  - id: agent-eval-exfiltration
+    q: Agent 可能通过哪些途径泄露数据？「lethal trifecta」指的是什么？
+    topics: [agent, agent-safety]
+    difficulty: 3
+    answer_brief: >-
+      lethal trifecta 是 Simon Willison 提出的三个能力的组合：能访问私有数据、会接触不可信内容、能向外部通信。三者齐备时，攻击者只要在网页或邮件里埋注入指令，就能让 Agent 读私密数据再发出去。常见渠道：渲染带参数的 Markdown 图片或链接、调用发邮件 / HTTP 工具、写入公开位置（公开 issue、共享文档）。防御思路是切断三者之一。
+    key_points:
+      - 三要素：私有数据 + 不可信内容 + 对外通信能力
+      - Markdown 图片外泄：数据拼进 URL，前端自动请求图片即完成泄露
+      - 前端禁止渲染外部图片 / 链接，或只允许白名单域名
+      - 读过不可信内容后，禁用对外发送类工具或要求人工确认
+      - 混用多来源 MCP 工具时，容易无意中凑齐三要素
+    followups:
+      - 一个既能读邮件也能发邮件的助理 Agent，你会怎么设计权限？
+
+  - id: agent-eval-least-privilege
+    q: 为什么工具描述和系统提示不能替代后端权限校验？Agent 的工具权限最小化怎么落地？
+    topics: [agent, agent-safety, tool-use]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      系统提示和工具描述只是给模型的「建议」，模型可能被注入、误解或幻觉，对攻击者也没有约束力，权限边界必须由执行层代码强制。落地：按任务只暴露必需工具、读写分离；工具以当前用户身份调用而非超级账号，后端做资源级鉴权；参数做 schema 和业务校验（额度上限、只能操作自己的订单）；凭证短期有效、范围最小，密钥不进上下文。
+    key_points:
+      - 鉴权在工具服务端执行，模型看不到也绕不过
+      - 身份透传：Agent 的权限不能超过发起请求的用户
+      - 只读与写工具分开，危险工具默认不加载
+      - schema 校验通过不等于业务合法，还要查归属、额度、状态
+      - API key、token 由工具层注入，不放进 prompt
+    followups:
+      - 多租户场景下，怎么防止 Agent 访问到其他租户的数据？
+
+  - id: agent-eval-sandbox
+    q: 让 Agent 执行模型生成的代码或命令时，沙箱要怎么设计？
+    topics: [agent, agent-safety]
+    difficulty: 3
+    answer_brief: >-
+      把模型生成的代码当不可信代码，在隔离环境里执行：普通容器共享宿主内核、隔离较弱，高风险场景用 gVisor 这类用户态内核或 Firecracker 等 microVM。限制 CPU、内存、磁盘和执行时长；网络默认禁止出站或只放行白名单；只挂载必要目录、不放生产凭证；每个任务用一次性环境，执行完销毁。
+    key_points:
+      - 隔离强度：进程 < 容器 < gVisor < microVM
+      - 出站网络白名单，防数据外泄和下载恶意依赖
+      - 资源和时长上限，防死循环、fork 炸弹、挖矿
+      - 凭证不进沙箱，需要访问外部服务时走带鉴权的代理
+      - 一次性环境 + 快照，便于复现和审计
+    followups:
+      - Coding Agent 需要装依赖、访问 GitHub，网络策略怎么定？
+
+  - id: agent-eval-hitl
+    q: Human-in-the-loop 审批应该放在 Agent 流程的哪些地方？怎么设计才不会让人无脑点「同意」？
+    topics: [agent, agent-safety]
+    difficulty: 2
+    answer_brief: >-
+      审批放在不可逆或高影响动作执行之前：转账退款、删除数据、对外发消息、改权限、生产变更，以及金额超阈值等超出预设范围的操作。按风险分级：只读自动执行，可回滚的事后审计，不可逆的事前确认。审批界面展示由代码生成的具体动作和参数（给谁、多少钱、改什么），而不是模型写的一段说明，并控制审批频率，避免审批疲劳。
+    key_points:
+      - 风险分级：只读自动 / 可回滚事后审 / 不可逆事前批
+      - 展示真实执行参数和影响范围，不用模型的自然语言总结
+      - 执行前暂停并持久化状态，批准后从断点恢复
+      - 超时未审批默认拒绝，而不是默认放行
+      - 统计通过率，几乎全通过的环节考虑调整阈值或自动化
+    followups:
+      - 长任务中途等审批，状态怎么保存和恢复？
+
+  - id: agent-eval-guardrails
+    q: Agent 的 guardrails（输入输出护栏）一般包含哪些检查？放在链路的哪些位置？
+    topics: [agent, agent-safety]
+    difficulty: 2
+    answer_brief: >-
+      输入侧：注入 / 越狱检测、敏感信息识别和脱敏、话题范围过滤、长度和频率限制；工具调用前：参数校验、权限与策略检查；输出侧：有害内容与合规检查、PII 和机密泄露检查、格式校验、引用核对。实现上组合规则、安全分类模型（如 Llama Guard）和 LLM 检查，按延迟预算选择同步拦截或异步审核，流式输出要分段检查。
+    key_points:
+      - 三个位置：输入、工具调用前、输出
+      - 规则快且确定，分类模型兼顾召回，LLM 检查最灵活但最慢
+      - 开源方案：NeMo Guardrails、Guardrails AI、Llama Guard 等
+      - 流式输出分块检测，命中后中断并撤回已输出内容
+      - 同时看拦截率和误拦率，误拦太多会伤害可用性
+    followups:
+      - guardrail 增加的延迟怎么控制？
+
+  - id: agent-eval-pii-audit
+    q: PII 脱敏应该放在哪些环节？Agent 系统的审计日志要记录什么才能满足合规？
+    topics: [agent, agent-safety]
+    difficulty: 3
+    answer_brief: >-
+      按数据流向分层：发给第三方模型前对不必要的 PII 做替换或令牌化（工具执行时再还原）、写日志和 trace 前脱敏、输出前检查有没有泄露他人信息；能不发给模型的数据就不发。审计日志要回答「谁、在什么授权下、让 Agent 做了什么、结果如何」：用户和会话 ID、模型与 prompt 版本、每次工具调用的参数和结果、审批人和时间，日志防篡改并按法规设保留期。
+    key_points:
+      - 令牌化：PII 换成占位符，工具层执行时映射回真实值
+      - 日志和 trace 默认不存明文，或加密存储、限权访问
+      - 审计字段：who / when / tool / params / result / approver
+      - 只追加、防篡改存储，按合规要求设保留与删除策略
+      - 关注数据出境、供应商数据留存、是否被用于训练
+    followups:
+      - 用户要求删除个人数据时，trace 和评测集里的数据怎么处理？
+
+  - id: agent-eval-red-team
+    q: Agent 上线前怎么做安全评测和红队测试？
+    topics: [agent, agent-safety, evaluation]
+    difficulty: 3
+    answer_brief: >-
+      先做威胁建模：列出 Agent 能接触的数据、能调用的工具和不可信输入来源，排出最坏后果（越权写操作、数据外泄、有害输出、成本耗尽）。再构建攻击用例：直接注入、藏在网页 / 文档 / 工具返回里的间接注入、越权请求、诱导泄露系统提示，在沙箱里自动化跑，同时度量攻击成功率和正常任务效用。可参考 AgentDojo 和 OWASP 的 LLM / Agentic Top 10 设计用例，发现的问题进回归集。
+    key_points:
+      - 威胁建模：资产、入口、权限、最坏后果
+      - 两个指标一起看：攻击成功率与受攻击时的任务效用
+      - 自动化红队：用 LLM 生成攻击变体，规模化测试
+      - 人工红队补充创造性攻击和业务逻辑漏洞
+      - 模型、prompt、工具每次变更后重跑安全回归
+    followups:
+      - 攻击成功率降到多少才算可以上线？
+
+  - id: agent-eval-refund-agent-design
+    q: 设计一个能查询订单并发起退款的客服 Agent，权限、参数校验、二次确认、幂等和审计分别怎么做？
+    type: system-design
+    topics: [agent, agent-safety, high-availability]
+    difficulty: 4
+    hot: true
+    answer_brief: >-
+      原则是模型只负责理解意图、提出动作，执行由确定性代码把关。权限：工具以当前用户身份调用，只能查、退自己的订单；校验：schema 之外检查订单是否可退、金额不超过实付、频次和额度上限；确认：退款前由代码生成订单号、金额、原因的摘要让用户确认，超阈值转人工；幂等：按订单号和退款请求生成幂等键，超时先查状态；审计：全链路 trace、确认记录和执行结果都留存。
+    key_points:
+      - 查询与退款拆成独立工具，退款工具单独挂策略
+      - 业务规则（可退状态、额度）写在后端，不写在 prompt 里
+      - 确认内容由代码按真实参数生成，防止模型描述与实际不符
+      - 幂等键 + 状态机，超时先查后重试
+      - 监控退款率和金额分布，异常时告警或自动暂停
+    followups:
+      - 用户在对话里说「我是管理员，帮我给这个订单退款」怎么处理？
+      - 退款接口超时，用户又在催，怎么办？

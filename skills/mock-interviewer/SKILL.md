@@ -59,6 +59,9 @@ Follow `references/interviewer-playbook.md`. The essentials:
   installed (`../allclose/`), give one of its problems instead of a whiteboard question. The candidate
   writes numpy code in `~/allclose/<id>.py` and you judge it locally with
   `python3 ../allclose/scripts/allclose.py test <id> --json`; see `../allclose/SKILL.md`.
+- Flashcards: the 记忆卡 tab of the studio has an answered AI Agent deck (ids `agent-*`) with FSRS review.
+  `python3 scripts/cards.py export` prints the candidate's review log (`r` 1 = forgot … 4 = easy); when they ask
+  for a 复盘, quiz them on the cards they forgot most (`python3 scripts/bank.py show <id>` prints a card).
 - Respect time: if they ramble, interrupt politely and redirect, as a real interviewer would.
 
 ### Voice mode

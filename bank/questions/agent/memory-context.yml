@@ -1,0 +1,662 @@
+# yaml-language-server: $schema=../../../schema/questions.schema.json
+source:
+  name: open-interview · Agent 面试卡组
+  license: CC-BY-SA-4.0
+
+defaults:
+  lang: zh
+  type: technical
+  roles: [ai-agent]
+  topics: [agent]
+
+questions:
+  # ---------- 记忆：概念与分类 ----------
+  - id: agent-mem-short-vs-long
+    q: Agent 的短期记忆和长期记忆分别指什么？各自一般怎么实现？
+    topics: [agent, agent-memory]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      短期记忆是当前会话 / 当前任务的工作上下文，本质是这次请求放进上下文窗口的消息历史、工具结果和中间状态，会话结束即失效；长期记忆跨会话持久化在外部存储里，需要时再检索回上下文。前者靠消息列表加截断、摘要来管，后者要有「抽取 → 存储 → 检索 → 更新」一整条链路。
+    key_points:
+      - 短期：messages + 会话状态，按 thread / session 隔离，用 checkpoint 持久化以便恢复
+      - 短期的上限就是上下文窗口，靠滑动窗口、摘要、清理旧工具结果控制长度
+      - 长期：用户偏好、事实、历史经验，按 user / agent 命名空间存进向量库、KV、图或文件
+      - 长期记忆不会自动生效，要决定何时写、写什么、何时取、注入多少
+      - 模型权重里的知识可称「参数记忆」，只能靠训练更新，不归记忆系统管
+    followups:
+      - 有些方案还分出「中期记忆」，它和摘要记忆是什么关系？
+      - 短期记忆里哪些内容值得晋升为长期记忆？
+
+  - id: agent-mem-cognitive-types
+    q: 情景记忆、语义记忆、程序性记忆在 Agent 里分别对应什么？各举一个例子。
+    topics: [agent, agent-memory]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      这套划分来自认知科学，CoALA 等工作把它引入语言 Agent。语义记忆存事实与知识，如「用户是素食者」；情景记忆存带时间和情境的具体经历，如「上次订票时航司接口超时，换备用接口才成功」，常用作 few-shot 或反思素材；程序性记忆存「怎么做」，包括系统提示词、技能、可复用工作流乃至模型权重。
+    key_points:
+      - 语义：去情境化的事实，常组织成用户画像 profile 或事实集合
+      - 情景：带时间与上下文的事件 / 轨迹，可检索相似案例当示例
+      - 程序性：system prompt、Skill、代码化技能库、工作流模板、模型权重
+      - 工作记忆：当前上下文窗口里的内容，即短期记忆
+      - 三者写入时机、存储结构、检索方式不同，不宜混在一个向量库里
+    followups:
+      - 让 Agent 自己改写 system prompt 算程序性记忆更新吗？风险在哪？
+      - 情景记忆怎么提炼成语义记忆？
+
+  - id: agent-mem-not-chat-log
+    q: 有人说「Agent 有记忆就是把聊天记录存进数据库」，这种说法错在哪？记忆系统要解决哪些核心问题？
+    topics: [agent, agent-memory]
+    difficulty: 2
+    answer_brief: >-
+      存原始聊天记录只是日志，不等于记忆：全量回灌会超窗口、成本高、噪声多，按向量检索原文又会召回过时或零碎的片段。真正的记忆系统要解决写什么（抽取提炼）、存哪里（结构与索引）、何时取取多少（检索与注入）、怎么改（更新、冲突、遗忘），再加上隔离和隐私，目标是让下一次决策用上正确且最新的信息。
+    key_points:
+      - 抽取：从对话中提炼稳定事实、偏好、决策，丢掉寒暄和临时信息
+      - 组织：结构化 schema、命名空间、时间戳、来源，方便更新与过滤
+      - 检索：在合适时机召回少量高相关记忆，而不是全量拼接
+      - 维护：新旧冲突要覆盖或失效，过期要遗忘，错误要可纠正
+      - 治理：按用户 / 租户隔离，可查看可删除，防止记忆投毒
+    followups:
+      - 原始聊天记录还要不要保留？保留下来做什么用？
+
+  # ---------- 记忆：架构与读写链路 ----------
+  - id: agent-mem-architecture
+    q: 让你从零设计一个 Agent 的记忆模块，整体怎么分层？读、写链路分别怎么走？
+    type: system-design
+    topics: [agent, agent-memory]
+    difficulty: 4
+    hot: true
+    answer_brief: >-
+      分三层：工作记忆（本轮上下文 + 结构化会话状态，带 checkpoint）、会话记忆（完整消息日志 + 滚动摘要）、长期记忆（画像存 KV，事实与经历存向量或图索引，原始日志冷存）。写链路异步：会话结束或攒够若干轮后，后台抽取候选记忆，与旧记忆比对后增改删；读链路每轮按用户和意图检索 top-k，经过滤、重排后以带时间和来源的记忆块注入上下文。
+    key_points:
+      - 工作记忆：messages + state（目标、已完成步骤、槽位），按 thread 持久化
+      - 存储组合：画像放 KV / 关系库，事实与经历放向量库或图，原文冷存
+      - 写入：后台抽取 → 去重与冲突消解 → 落库，记录来源与时间
+      - 读取：强制按 user_id / namespace 过滤，混合检索 + 重排，限条数和 token
+      - 注入：固定位置的记忆块，带时间戳与置信度，与指令分区
+      - 配套：用户可查可删、多租户隔离、记忆命中率与误写率监控
+    followups:
+      - 记忆写入放在主链路同步做还是异步做？
+      - 怎么证明这个记忆模块真的带来了收益？
+
+  - id: agent-mem-write-hotpath
+    q: 记忆写入是在对话主链路里同步做，还是放到后台异步做？各有什么取舍？
+    topics: [agent, agent-memory]
+    difficulty: 3
+    answer_brief: >-
+      主链路写入（hot path）是 Agent 在对话中自己调用「保存记忆」工具，即时生效、能告诉用户「我记住了」，代价是增加延迟、分散模型注意力、容易写进噪声。后台写入由独立任务在会话结束或空闲时批量抽取，不拖慢响应、能看全上下文做更好的提炼，但有滞后，其他并行会话暂时拿不到新记忆。实践中常结合：用户明说「记住」走同步，其余异步。
+    key_points:
+      - 同步：实时、可见、可确认；增加时延与 token，模型可能过度写入
+      - 异步：不阻塞响应，可用更强模型、更长上下文做抽取与合并
+      - 异步要定触发时机：会话结束、空闲 N 分钟、累积 N 轮或 N token
+      - 用户显式指令（「记住我对花生过敏」）同步写入并回显确认
+      - 异步写要处理同一用户并发会话的冲突，用版本号或时间戳兜底
+    followups:
+      - 后台抽取用的模型要和主模型一样强吗？
+      - 怎么防止把一次性的临时信息写成长期记忆？
+
+  - id: agent-mem-retrieval-scoring
+    q: 长期记忆积累很多以后，这一轮该召回哪几条怎么决定？只看向量相似度够吗？
+    topics: [agent, agent-memory]
+    difficulty: 3
+    answer_brief: >-
+      只看语义相似度不够：它分不清新旧和轻重，也会漏掉关键词、实体的精确匹配。经典做法是 Generative Agents 的三项打分：相关性（embedding 余弦）、时效性（随时间指数衰减）、重要性（写入时让 LLM 打 1-10 分），归一化后加权求和。工程上再叠加元数据硬过滤、关键词 / 实体混合检索和重排，并限制注入条数与 token。
+    key_points:
+      - Generative Agents：时效按小时衰减 0.995，重要性 1-10，三项 min-max 归一、权重均为 1
+      - 先按 user_id、类型、有效期硬过滤，再算相似度
+      - 混合检索：向量 + 关键词 + 实体匹配，必要时 cross-encoder 重排
+      - 「上次」「去年」这类时间意图要按时间字段检索，不能只靠语义
+      - 时机：每轮固定检索，或让模型按需调用 search_memory 工具
+    followups:
+      - 召回的记忆与当前用户指令矛盾时，模型该以谁为准？
+      - 每轮都检索带来的延迟怎么压？
+
+  - id: agent-mem-update-conflict
+    q: 用户上个月说住在北京，今天说已经搬到上海，记忆系统怎么处理这种新旧冲突？
+    topics: [agent, agent-memory]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      关键是写入时「先比对再决策」，不能盲目追加：新事实先检索同主题的旧记忆，再由 LLM 或规则判断新增、更新、删除还是忽略，mem0 论文就是让 LLM 在 ADD / UPDATE / DELETE / NOOP 中选一个。更稳妥的是不物理删除，给旧记录打失效时间（如 Zep 的 Graphiti 在边上记 valid_at / invalid_at），检索默认只取当前有效值，历史问题也还能回答。
+    key_points:
+      - 写入前按主题 / 实体检索旧记忆，避免重复和矛盾并存
+      - 决策四选一：ADD / UPDATE / DELETE / NOOP，LLM 判断 + 规则兜底
+      - 软删除：记 valid_from / valid_to，保留「什么时候是什么」的历史
+      - 优先级：用户明说 > 模型推断；新 > 旧；高置信 > 低置信
+      - 无法判断时两条都留并标注，读取时交给模型或向用户确认
+    followups:
+      - 如果写入侧只追加不更新，读取侧要怎么补救？
+      - 推断出的偏好和用户明说的偏好冲突怎么办？
+
+  - id: agent-mem-forgetting
+    q: Agent 的长期记忆需要「遗忘」吗？有哪些遗忘策略？
+    topics: [agent, agent-memory]
+    difficulty: 3
+    answer_brief: >-
+      需要。只增不减会让检索噪声越来越大、过时信息误导决策，还有存储成本和合规风险。常见策略：按 TTL 过期（如「这周在出差」这类临时状态）、按时效与访问频率衰减降权、被新事实取代后标记失效、相似记忆合并成一条摘要、容量满时按得分淘汰到冷存储，以及用户要求删除时的彻底硬删除。
+    key_points:
+      - 写入时分类并设 TTL：稳定偏好不过期，临时状态短期过期
+      - 衰减：检索得分乘时间衰减，长期未被访问的降权或归档
+      - 合并：同主题多条记忆定期合并，减少碎片和矛盾
+      - 淘汰：容量上限 + 重要性 / LRU 得分，冷数据移到低成本存储
+      - 合规删除要覆盖原文、向量索引、摘要、缓存和备份
+    followups:
+      - 遗忘错了（删掉了还有用的记忆）怎么补救？
+      - 归档和删除有什么区别？
+
+  - id: agent-mem-schema
+    q: 一条长期记忆在库里应该存哪些字段？画像类和事件类记忆的表结构有什么不同？
+    topics: [agent, agent-memory]
+    difficulty: 3
+    answer_brief: >-
+      至少要有：归属（user / agent / tenant 命名空间）、类型、内容（自然语言 + 可选结构化键值）、向量、来源（哪个会话哪条消息，用户明说还是推断）、置信度、创建与更新时间、有效期，以及状态或版本字段便于更新和软删除。画像类适合一个用户一份 JSON / KV 文档，按字段覆盖更新；事件类适合一事一行的追加表，带发生时间，靠检索取用。
+    key_points:
+      - 基础字段：id、namespace、type、content、embedding、source、时间戳
+      - 治理字段：confidence、valid_from / valid_to、status（有效 / 被取代 / 已删除）
+      - 画像（profile）：单文档、字段可覆盖，读取快，但并发更新要防丢写
+      - 集合（collection）：多条小记录，写入简单，更新删除更难
+      - 原始消息另存日志表，记忆用 source_id 回链，便于审计与重建
+    followups:
+      - 向量和元数据放同一个库还是分开存？
+      - 记忆 schema 改版后历史数据怎么迁移？
+
+  - id: agent-mem-storage-choice
+    q: Agent 记忆的存储介质怎么选？向量库、KV / 关系库、图数据库、文件各适合存什么？
+    topics: [agent, agent-memory, vector-search]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      按访问模式选，通常是组合使用。向量库适合按语义模糊召回的非结构化事实和经历；KV / 关系库适合按主键精确读取的画像、会话状态和 checkpoint，支持事务；图数据库适合实体关系、多跳推理和随时间变化的事实；Markdown 等文件适合人可读、可编辑、可版本管理的规则与项目知识，coding agent 用得最多。
+    key_points:
+      - 向量库：语义召回强，但不擅长精确过滤、计数和时间推理
+      - KV / SQL：画像、session state、checkpoint，读写快、可事务
+      - 图：实体与关系、时间边，适合多跳问题；抽取成本高、schema 难维护
+      - 文件：透明可审阅，可走 Git 和 code review；量大时要靠 grep 或索引
+      - 常见组合：关系库存事实与元数据作为真相源，向量 / 图作为索引
+    followups:
+      - 只用向量库做记忆，常见会出哪些问题？
+      - 什么情况下值得上图数据库？
+
+  - id: agent-mem-file-memory
+    q: Claude Code 这类 coding agent 为什么多用 CLAUDE.md、AGENTS.md 这种 Markdown 文件做记忆，而不是向量库？
+    topics: [agent, agent-memory, context-engineering]
+    difficulty: 2
+    answer_brief: >-
+      因为它要记的主要是规则、约定、项目结构这类量小但每次都要生效的信息，会话开始时整份加载比检索更可靠，不存在漏召回。文件对人透明，可读可改，能进 Git 走 code review，随仓库和分支共享；模型用现成的读写文件工具就能维护，不需额外基础设施。代价是要控制体积，内容多了就按目录或路径拆分、按需加载。
+    key_points:
+      - 内容少且需常驻：全量加载优于向量召回
+      - 可审计：人能直接看到并纠正 Agent 记住了什么
+      - 分层：组织级 / 用户级 / 项目级，子目录的文件在用到时才加载
+      - 团队规范进 Git 走 review，个人偏好放用户目录不入库
+      - 文件越长越占上下文、遵循度越差，官方建议单个 CLAUDE.md 控制在约 200 行内
+    followups:
+      - Agent 自动往记忆文件里追加内容，怎么防止越写越乱？
+      - 什么情况下文件记忆不够用，必须上检索？
+
+  # ---------- 记忆：代表性方案 ----------
+  - id: agent-mem-memgpt
+    q: MemGPT（现在的 Letta）的分层记忆是怎么设计的？它借鉴了操作系统的什么思想？
+    topics: [agent, agent-memory]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      MemGPT 把上下文窗口类比为内存、外部存储类比为磁盘，借鉴虚拟内存分页：由模型通过函数调用自己把信息换入换出，营造「上下文无限」的效果。主上下文包括系统指令、可读写的 working context（存关于用户和自身的关键事实）和消息 FIFO 队列；外部上下文有 recall storage（完整对话日志，可搜索）和 archival storage（可语义检索的长期知识库）。
+    key_points:
+      - 主上下文：系统指令 + working context（Letta 里叫 memory blocks）+ FIFO 消息队列
+      - 外部：recall storage 存全部历史消息，archival storage 存任意长文本并支持向量检索
+      - 自编辑记忆：LLM 调函数改写 working context、写入或检索 archival
+      - 内存压力：token 超过警戒线（论文举例 70%）插入警告，满了驱逐部分消息并更新递归摘要
+      - request_heartbeat 让模型连续调用多个函数后再把控制权交还用户
+    followups:
+      - 让 LLM 自己管理记忆有什么风险？
+      - 递归摘要和普通滑动窗口摘要有什么区别？
+
+  - id: agent-mem-mem0
+    q: mem0 这类「记忆层」产品解决什么问题？它的写入链路大致怎么工作？
+    topics: [agent, agent-memory]
+    difficulty: 3
+    answer_brief: >-
+      mem0 把「从对话中抽取、合并、检索长期记忆」封装成独立服务，应用每轮后 add、每轮前 search，就能按 user / agent / 会话维度拿到个性化记忆，而不必全量塞历史。2025 年论文版本是两阶段：先用 LLM 结合会话摘要和最近消息，从最新交互里抽取候选事实；再与相似旧记忆比对，由 LLM 选 ADD / UPDATE / DELETE / NOOP。另有图记忆变体存实体关系。
+    key_points:
+      - 接口：add（写入并自动抽取）、search（带 user_id 等过滤检索）、update / delete
+      - 作用域：user_id、agent_id、run_id（会话级）+ 自定义 metadata
+      - 存储：向量库做语义检索，关系库存事实与元数据，可选图存实体关系
+      - 论文在 LoCoMo 上对比全量上下文，报告延迟和 token 大幅下降
+      - 新版文档里自动抽取改为只追加，纠错走显式 update / delete，选型要看版本
+    followups:
+      - 自建记忆层和用 mem0、Zep、Letta 这类现成方案怎么选？
+      - 抽取模型抽错了，会带来什么连锁问题？
+
+  - id: agent-mem-llm-vs-rule-routing
+    q: 记忆的读写由 LLM 自主决定（作为工具调用），还是由规则 / 代码固定触发更好？
+    topics: [agent, agent-memory]
+    difficulty: 3
+    answer_brief: >-
+      各有适用面，生产上多是混合。LLM 自主决策（给它 save_memory / search_memory 工具）灵活、能判断什么值得记，但不稳定：会漏写、过度写、该查不查，还占推理步数，也可能被注入诱导写入。规则触发（每轮固定检索、会话结束固定抽取）可预测、易评测、延迟可控，但不够聪明。常见做法：读侧规则保底 + 模型按需补查，写侧模型提议 + 规则校验后落库。
+    key_points:
+      - LLM 决策：语义判断好、灵活；不确定、难测试、易被诱导
+      - 规则：每轮检索 / 会话结束抽取 / 关键词触发；稳定但召回粗
+      - 读：画像固定注入 + 细节按需检索
+      - 写：模型只提议，规则校验类型、敏感信息、置信度后再写
+      - 用离线评测对比两种方案的召回率、误写率和延迟
+    followups:
+      - 模型频繁调用记忆工具拖慢响应，怎么优化？
+
+  - id: agent-mem-reflection
+    q: Generative Agents 里的「反思（reflection）」机制是什么？对 Agent 的长期记忆设计有什么启发？
+    topics: [agent, agent-memory]
+    difficulty: 3
+    answer_brief: >-
+      Generative Agents 把所有观察写进记忆流，当最近事件的重要性得分之和超过阈值（论文中是 150）时触发反思：模型读最近 100 条记录，提出几个高层问题，用这些问题检索相关记忆，再归纳出带引用的高层洞察写回记忆流。启发是记忆不能只存原始事件，要周期性地把零散经历提炼成更抽象、更好用的结论，并且能追溯来源。
+    key_points:
+      - 记忆流：带时间戳的自然语言观察，按相关性、时效、重要性检索
+      - 触发：重要性累计超阈值，论文中每天约反思两三次
+      - 反思结果本身也是记忆，可被再次反思，形成层级
+      - 工程对应：后台「巩固」任务，把多次交互归纳成偏好、规则或经验
+      - 风险：错误洞察会被反复引用，保留引用才能溯源纠正
+    followups:
+      - Reflexion 的自我反思和这里的反思有什么不同？
+      - 反思得出的结论错了，怎么发现并纠正？
+
+  - id: agent-mem-user-profile
+    q: 做个性化 Agent 时，怎么从对话里提取并动态更新用户画像和偏好，同时过滤偶发噪声？
+    topics: [agent, agent-memory]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      先区分「显式陈述」和「行为推断」：用户明说的偏好直接写入、高置信；从行为推断的只作候选，跨多个会话出现一致证据后才晋升为画像字段。画像用预定义的结构化 schema 而不是自由文本，每个字段记来源、置信度和更新时间，新证据按时间衰减加权覆盖；「今天想吃辣」这类一次性情境只进短期状态或带 TTL。
+    key_points:
+      - 显式 > 推断：明说的直接写，推断的要多次证据才生效
+      - 证据计数 / 置信度：跨会话重复出现才晋升，单次行为不改画像
+      - 时间衰减：近期行为权重更高，能跟上口味变化
+      - 区分稳定偏好与临时状态，临时信息设 TTL
+      - 画像对用户可见可改；健康、宗教等敏感属性不推断或需授权
+    followups:
+      - 画像字段应该预先定义，还是让 LLM 自由生成？
+      - 冷启动没有历史时怎么做个性化？
+
+  - id: agent-mem-procedural-experience
+    q: 怎么让 Agent 从过去的任务里积累经验，下次做同类任务更快更好？
+    topics: [agent, agent-memory]
+    difficulty: 3
+    answer_brief: >-
+      把成功或失败的轨迹提炼成可复用的程序性记忆。形式有：Voyager 的代码技能库，把验证过的技能函数按描述向量检索复用；Agent Workflow Memory 从轨迹中归纳通用工作流，作为后续任务的指导；Reflexion 把失败后的文字反思存下来，重试时带上；coding agent 则把踩坑经验写进规则文件或 Skill。关键是先验证再沉淀，并能按任务检索。
+    key_points:
+      - 技能库：可执行代码 + 描述，按语义检索复用（Voyager）
+      - 工作流归纳：从多条轨迹抽象出带变量的步骤模板（AWM）
+      - 失败反思：错误原因与改进写成文字，下次尝试时注入（Reflexion）
+      - 只沉淀验证通过的经验并写明适用条件，避免错误经验扩散
+      - 经验库同样要去重、版本化、淘汰过时条目
+    followups:
+      - 经验记忆和 RAG 知识库有什么区别？
+      - 怎么评估沉淀下来的经验真的有用？
+
+  # ---------- 记忆：多轮状态 ----------
+  - id: agent-mem-multiturn-state
+    q: 多轮对话 Agent 的上下文和状态你怎么管理？只维护一个 messages 列表有什么问题？
+    topics: [agent, agent-memory, context-engineering]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      只靠 messages 列表的问题是：越来越长，关键状态埋在历史里难读取，出错难恢复，也无法跨进程续跑。我会拆成两部分：messages 负责给模型看的对话历史（配合截断和摘要），另起结构化 state 存任务目标、已填槽位、已完成步骤、待确认事项等业务状态，每步落 checkpoint；每轮由代码根据 state 和必要的历史组装上下文。
+    key_points:
+      - 对话历史：按 session / thread 隔离，长了截断或摘要
+      - 结构化状态：槽位、进度、用户确认结果由代码读写，不靠模型记
+      - checkpoint：每步持久化，重启、人工审批后可恢复、可回放
+      - 组装：每轮用 state + 最近 N 轮 + 检索结果拼上下文
+      - 并发：同一会话的消息串行处理或加锁，避免状态竞争
+    followups:
+      - 用户中途切换话题又切回来，状态怎么处理？
+      - 摘要会不会把槽位信息压丢？
+
+  - id: agent-mem-coreference
+    q: 多轮对话里用户说「那第二个呢？」「把它改到明天」，Agent 怎么处理这种指代和省略？
+    topics: [agent, agent-memory, context-engineering]
+    difficulty: 2
+    answer_brief: >-
+      两条路：一是把足够的历史直接给模型，让它在上下文里自行消解，适合短对话、不涉及检索的场景；二是在检索或调用工具前先做 query 改写，用 LLM 结合最近几轮和对话状态，把「那第二个呢」改写成独立完整的问题，再拿改写后的 query 去检索或路由。在结构化状态里维护「当前焦点实体」（上一轮列出的候选、正在操作的订单）能让改写更准。
+    key_points:
+      - 检索型 Agent 必须改写：拿「它」去做向量检索基本必然失败
+      - 改写输入：最近几轮对话 + 当前焦点实体；输出独立 query
+      - 维护焦点：上一轮展示的列表、选中对象的 ID
+      - 有歧义时反问确认，不要猜
+      - 改写结果写进日志，便于区分是改写错还是检索错
+    followups:
+      - query 改写用大模型还是小模型？延迟怎么控制？
+
+  # ---------- 记忆：评测、一致性、安全与隐私 ----------
+  - id: agent-mem-eval
+    q: 怎么评估一个 Agent 的长期记忆能力？有哪些常用基准和指标？
+    topics: [agent, agent-memory, evaluation]
+    difficulty: 3
+    answer_brief: >-
+      分端到端和组件两层。端到端用多会话长对话基准：LoCoMo（超长多会话对话上的问答等任务），LongMemEval（考察信息抽取、多会话推理、时间推理、知识更新、拒答五种能力）。组件层看写入是否准确、有无误写，检索的召回与精度，更新后是否用上最新值；同时统计每轮注入 token、延迟和成本，并与全量上下文、无记忆两个基线比较。
+    key_points:
+      - LongMemEval 五项：信息抽取、多会话推理、时间推理、知识更新、拒答
+      - 写入：该记的记了没有，噪声和敏感信息有没有被写进去
+      - 检索：Recall@k、相关记忆排名、过时记忆是否被召回
+      - 更新：冲突后回答是否用最新值，历史问题是否还能答对
+      - 成本：注入 token、p95 延迟，对比全量上下文与无记忆基线
+    followups:
+      - 线上怎么发现记忆出错？有哪些可观测信号？
+
+  - id: agent-mem-concurrency
+    q: 同一个用户在多个会话里同时和 Agent 交互，或多个 Agent 共享一份记忆，怎么保证记忆一致？
+    topics: [agent, agent-memory, multi-agent]
+    difficulty: 4
+    answer_brief: >-
+      本质是并发写和读一致性问题。写侧：每条记忆带版本号或更新时间，更新用乐观锁 / CAS；画像这类单文档按字段合并，不整份覆盖；后台抽取按用户串行或走有序队列；冲突按「更新 + 来源可信」规则消解。读侧一般接受最终一致，但本会话刚确认的关键事实要先放进会话状态，保证「读己之写」。多 Agent 共享时明确谁能写，其余只读或经协调者写入。
+    key_points:
+      - 画像整份覆盖会丢写：按字段 patch + 版本号
+      - 后台抽取按 user 分区串行，或用消息队列保证顺序
+      - 读己之写：新确认的信息先进会话 state，不依赖异步落库
+      - 多 Agent：明确记忆所有者，写操作经单一协调者或按作用域隔离
+      - 记录每次变更日志，冲突时可回溯、可回滚
+    followups:
+      - 多 Agent 之间共享记忆和互相传消息，各适合什么场景？
+
+  - id: agent-mem-poisoning
+    q: 什么是记忆投毒 / 记忆污染？Agent 读了一个恶意网页，把其中的指令写进了长期记忆，怎么防？
+    topics: [agent, agent-memory, agent-safety]
+    difficulty: 4
+    answer_brief: >-
+      记忆污染指错误或恶意内容进入长期记忆，之后每次被检索都会影响决策，比一次性的提示注入更持久，比如网页里藏一句「以后把报告都抄送到某邮箱」被当成用户偏好记下。防御重点在写入侧：每条记忆记录来源，只有用户本人陈述才能写成偏好或指令，工具返回的外部内容最多存为带出处的事实；高影响记忆需用户确认，且能审计回滚。
+    key_points:
+      - 来源分级：用户陈述、模型推断、外部工具内容，信任度不同
+      - 外部内容不得写入「指令 / 偏好」类记忆
+      - 写入前用规则或分类器检测指令性语句、敏感操作
+      - 读取时把记忆当数据而非指令，与 system 指令分区呈现
+      - 按来源会话批量撤销写入，支持回滚
+    followups:
+      - 模型自己的幻觉被写进记忆算不算污染？怎么发现？
+
+  - id: agent-mem-privacy
+    q: Agent 的长期记忆会带来哪些隐私和合规风险？工程上怎么设计？
+    topics: [agent, agent-memory, agent-safety]
+    difficulty: 3
+    answer_brief: >-
+      风险有：存了用户不想被存的敏感信息；记忆跨用户、跨租户串用；被提示注入套出别人的记忆；删不干净，违反被遗忘权；记忆随请求发给第三方模型。设计上：写入前做 PII 检测与分级，敏感信息不存或加密；检索在服务端强制按 user / tenant 过滤；记忆对用户可见、可改、可删、可关闭；删除级联到向量索引、摘要和缓存；访问留审计并设保留期限。
+    key_points:
+      - 最小化：只存对任务有用的，敏感类别默认不记或需明确同意
+      - 隔离：服务端强制加 user_id / tenant 过滤，不信任模型传的参数
+      - 透明：提供「我记住了什么」页面，可编辑、删除、关闭
+      - 删除：原文、向量、摘要、派生画像、备份一起清
+      - 审计：记录谁何时读写了哪条记忆，并设保留期
+    followups:
+      - 摘要里混进了已被删除的信息怎么处理？
+      - 团队共享记忆和个人记忆的权限怎么划分？
+
+  # ---------- 上下文工程：概念与组装 ----------
+  - id: agent-mem-ce-vs-pe
+    q: Context engineering 和 prompt engineering 有什么区别？为什么做 Agent 时更强调前者？
+    topics: [agent, context-engineering, prompt-engineering]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      Prompt engineering 关注怎么写好指令本身（措辞、结构、示例），通常是一段相对静态的文本；context engineering 关注每一步推理时整个上下文窗口里放什么、放多少、按什么顺序放，包括系统提示、工具定义、记忆、检索结果、消息历史和工具输出。Agent 多轮循环调用工具，上下文持续增长且每步都在变，决定成败的往往不是措辞，而是信息的筛选、压缩和组织。
+    key_points:
+      - PE 是 CE 的一部分：system prompt 依然要写好
+      - CE 管理的对象：指令、工具、示例、记忆、RAG 结果、历史、工具结果、状态
+      - CE 是迭代的：每一轮都要重新决定什么进窗口
+      - 目标：用尽量少的高信号 token 让模型做对下一步
+      - 常见手段可归为写出、选取、压缩、隔离四类
+    followups:
+      - Harness engineering 和 context engineering 是什么关系？
+      - 你在项目里做过哪些 context engineering 的优化？
+
+  - id: agent-mem-context-assembly
+    q: 一次 Agent 推理调用的上下文一般由哪些部分组成？你会按什么顺序排列？
+    topics: [agent, context-engineering]
+    difficulty: 2
+    answer_brief: >-
+      典型组成：系统提示（角色、规则、输出格式）、工具定义、稳定知识（项目规则、用户画像）、检索到的记忆和文档、对话与工具调用历史（可能含摘要）、任务状态或 todo，以及当前用户输入。排列原则是越稳定越靠前、越易变越靠后：既让前缀命中 prompt cache，又让当前任务和关键约束靠近末尾，不被埋在中间。
+    key_points:
+      - 顺序：tools / system → 稳定知识 → 检索内容 → 历史 → 当前输入
+      - 稳定前缀利于 KV cache 复用，时间戳等动态信息往后放
+      - 关键指令可在末尾重述，缓解 lost in the middle
+      - 不同来源用 XML 标签或标题分隔，标注来源与时间
+      - 每部分设 token 上限，超了按优先级裁剪
+    followups:
+      - 检索结果放在 system 里还是 user 消息里？为什么？
+
+  # ---------- 上下文工程：窗口不够时的手段 ----------
+  - id: agent-mem-overflow-overview
+    q: Agent 跑长任务时上下文窗口快满了，你有哪些手段？分别适合什么情况？
+    topics: [agent, context-engineering]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      按代价从低到高：清理，丢掉已用过的大块工具结果、只留引用；截断，按 token 保留最近若干轮并钉住系统提示与关键消息；压缩，把旧历史摘要成结构化要点（compaction）；外置，把计划、进展、中间结果写进文件或记忆库，需要时再读回；隔离，把重度探索交给子 Agent 在独立上下文里完成，只回传精炼结论。
+    key_points:
+      - 清理旧工具结果：最轻量，原文可重新获取时首选
+      - 截断：简单但丢早期信息，工具调用与结果要成对删除
+      - 摘要压缩：适合长时间来回协作，要设计保留什么
+      - 笔记外置：适合有阶段里程碑的长任务，可跨上下文重置
+      - 子 Agent：适合可并行的调研、搜索类子任务
+    followups:
+      - 这些手段分别会怎样影响 prompt cache 命中？
+      - 怎么判断压缩后有没有丢掉关键信息？
+
+  - id: agent-mem-compaction
+    q: 用摘要做上下文压缩（compaction）时，什么时候触发？摘要该保留什么、丢掉什么？
+    topics: [agent, context-engineering]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      一般在上下文用量达到窗口某个比例或固定 token 阈值时触发，并给本轮输出留足余量，也可在任务阶段切换时主动做。摘要要保留用户目标与约束、已做的决策及理由、当前进度和下一步、未解决的问题与报错、关键标识（文件路径、ID、URL）；可以丢掉冗余的工具原始输出、已被否定的尝试细节和寒暄。压缩后以摘要 + 最近几轮原文继续。
+    key_points:
+      - 触发：用量比例、轮数、阶段边界；预留输出空间
+      - 保留：目标、约束、决策、进度、待办、错误、关键路径与 ID
+      - 丢弃：重复的工具输出、可再取的原文、过时的尝试
+      - 用结构化摘要模板，比自由文本更不容易漏项
+      - 先保召回（宁多勿漏）再调精简，用轨迹回放对比压缩前后
+      - 压缩改写了历史前缀，之后的缓存要重新建立
+    followups:
+      - 多次压缩后信息逐渐失真，怎么办？
+      - 摘要用主模型做还是用便宜模型做？
+
+  - id: agent-mem-truncation-pitfalls
+    q: 用滑动窗口截断对话历史时，有哪些容易踩的坑？
+    topics: [agent, context-engineering]
+    difficulty: 2
+    answer_brief: >-
+      常见坑：按消息条数而非 token 截断，一条超长工具结果就能撑爆窗口；把 tool call 和对应的 tool result 拆开，导致 API 报错或模型困惑；把系统提示、最初的任务描述和关键约束一起截掉，Agent 忘了自己在干什么；每轮从头部删一点，前缀不断变化，prompt cache 次次失效。正确做法是按 token 预算、以完整的轮为单位截断，固定保留头部关键内容。
+    key_points:
+      - 用目标模型的 tokenizer 计数，而不是条数或字符数
+      - 工具调用与结果成对保留、成对删除
+      - 钉住 system prompt、初始任务和用户约束
+      - 一次删一大段比每轮删一条对缓存更友好
+      - 被截掉的部分留一行说明或摘要，提示模型更早内容已省略
+    followups:
+      - 截断和摘要怎么结合使用？
+
+  - id: agent-mem-subagent-isolation
+    q: 为什么说用子 Agent 能帮主 Agent「省上下文」？这样做的代价是什么？
+    topics: [agent, context-engineering, multi-agent]
+    difficulty: 3
+    answer_brief: >-
+      子 Agent 在自己独立、干净的上下文窗口里完成聚焦的子任务，比如读几十个文件、搜很多网页，这些 token 不进入主 Agent 的窗口，最后只回传一份精炼结论（Anthropic 提到通常一两千 token），主 Agent 的上下文因此保持干净，还能并行。代价是总 token 成本明显上升，子 Agent 缺少完整背景容易做偏，交接时丢细节，多个子 Agent 之间也难协调。
+    key_points:
+      - 适合：读多写少、可并行、结论可压缩的调研 / 检索子任务
+      - 委派要写清目标、边界、输出格式和停止条件
+      - 回传结构化摘要 + 引用（路径、URL），细节需要时再取
+      - 多 Agent 的总 token 消耗远高于单 Agent，要与任务价值匹配
+      - 强耦合、需共享大量中间状态的写任务不适合拆分
+    followups:
+      - 子 Agent 返回的结果太长或质量差，主 Agent 怎么办？
+
+  - id: agent-mem-notes-to-file
+    q: 长任务中让 Agent 把计划和进展写进 NOTES.md、todo.md 这类文件，有什么好处？
+    topics: [agent, context-engineering, agent-memory]
+    difficulty: 3
+    answer_brief: >-
+      这是把记忆外置到上下文窗口之外：笔记持久化在文件里，即使上下文被压缩或清空，Agent 重新读取就能接着干，适合跨多个上下文窗口的长任务。另一个作用是复述：Manus 的做法是不断改写 todo.md，相当于把全局目标和计划推到上下文末尾，对抗长任务里的目标漂移和 lost in the middle。文件对人可见，也便于检查和接手。
+    key_points:
+      - 记录：目标、计划清单、已完成项、关键发现、待解决问题
+      - 上下文重置或压缩后，从文件恢复状态继续
+      - 更新 todo 等于把目标放回注意力最强的末尾
+      - 比让模型「记在脑子里」更可靠，可审计
+      - 要约束笔记格式与长度，防止笔记自身膨胀
+    followups:
+      - 结构化笔记和 compaction 分别在什么时候用？
+
+  - id: agent-mem-tool-results
+    q: 工具返回的结果特别大（一整页 HTML、几万行日志），怎么避免它撑爆 Agent 的上下文？
+    topics: [agent, context-engineering, tool-use]
+    difficulty: 3
+    answer_brief: >-
+      在工具层就控制输出：默认分页或截断，并告诉模型总量和取下一页的方式；只返回需要的字段或摘要；大内容落到文件或对象存储，只把路径 / ID 和几行预览给模型，让它用 grep、按行读取等工具按需取。已经用过的旧工具结果可在后续轮次清理，只留「已获取，见某路径」的占位——原文随时能重取，这是可恢复的压缩。
+    key_points:
+      - 工具设计：分页、limit 参数、字段过滤、简洁可操作的报错
+      - 大结果外置：存文件，上下文只放引用和预览
+      - 可恢复压缩：保留 URL 或路径即可丢掉正文
+      - 清理旧工具结果：Anthropic API 的 context editing 可自动清理旧 tool result
+      - 预处理：用代码或小模型先抽出相关部分再返回
+    followups:
+      - 清理旧工具结果会不会影响 prompt cache？
+
+  - id: agent-mem-just-in-time
+    q: 什么是「即时（just-in-time）加载上下文」？它和一开始就把相关资料全检索进来相比，有什么取舍？
+    topics: [agent, context-engineering]
+    difficulty: 3
+    answer_brief: >-
+      即时加载是上下文里只放轻量标识（文件路径、URL、表名、技能名称和简介），Agent 需要时再用工具去读，逐步发现所需信息，也叫渐进式披露。好处是上下文干净、信息新鲜、不受一次性预检索质量限制；代价是多轮工具调用更慢，更依赖工具设计和模型的探索能力。实践中常用混合策略：少量必需信息开局加载，其余用 grep、搜索按需取。
+    key_points:
+      - 预加载：快、确定，但易塞入无关内容，检索错了全盘跑偏
+      - 即时加载：按需、省 token；探索慢，可能走弯路
+      - 元数据本身是信号：目录结构、文件名、时间戳帮助判断相关性
+      - Skills 先只放名称和描述，用到再读全文，是同一思路
+      - 混合：Claude Code 启动时加载 CLAUDE.md，其余文件用 glob / grep 即时读
+    followups:
+      - 工具很多时，工具定义本身怎么做按需加载？
+
+  # ---------- 上下文工程：长上下文的问题 ----------
+  - id: agent-mem-lost-in-middle
+    q: 什么是 lost in the middle？在 Agent 和 RAG 场景里怎么缓解？
+    topics: [agent, context-engineering, rag]
+    difficulty: 2
+    hot: true
+    answer_brief: >-
+      2023 年斯坦福等团队的论文《Lost in the Middle》发现，模型使用长上下文时，关键信息在开头或结尾效果最好，放在中间显著变差，呈 U 形曲线，在多文档问答和键值检索任务上都成立。缓解思路：少放无关内容；最相关的材料放两端；问题和指令放在长材料之后或首尾重复；长任务中把目标和计划不断复述到上下文末尾。
+    key_points:
+      - 现象：U 形曲线，首尾利用得好、中段差，上下文越长越明显
+      - 重排：最相关文档放开头和结尾，弱相关的放中间或直接删
+      - 精简：检索 + 重排 + 压缩，减少无关 token
+      - 位置：问题和关键约束放在长材料之后，必要时重复
+      - Agent：用 todo / 计划复述把目标拉回末尾
+      - RAG：top_k 不是越大越好，用评测找拐点；可按相关度把片段排到两端
+    followups:
+      - 新一代长上下文模型还有这个问题吗？你会怎么验证？
+
+  - id: agent-mem-context-rot
+    q: 模型都支持百万 token 上下文了，为什么还说不能把所有信息都塞进去？什么是 context rot？
+    topics: [agent, context-engineering]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      Context rot 指输入越长，模型利用上下文的可靠性越差，即使任务很简单。Chroma 2025 年测了 18 个模型，性能普遍随输入长度下降，有语义相近的干扰项、问题与答案语义距离远时更明显；同样的问题只给相关片段比给完整长历史准得多。原因包括注意力被大量 token 稀释、训练中长序列较少等。再加上成本和延迟随长度增长，上下文应当当作有限预算来精打细算。
+    key_points:
+      - 标称窗口 ≠ 有效窗口：RULER 等基准显示多数模型远未到标称长度就明显退化
+      - 干扰项：语义相近的错误内容最伤，一个干扰项就会拉低表现
+      - 注意力稀释：n 个 token 有 n² 对关系，相关信号被噪声淹没
+      - 成本：输入按 token 计费，prefill 延迟随长度上升
+      - 对策：检索、重排、压缩，只放高信号 token
+    followups:
+      - 你会怎么测出所用模型在自己任务上的有效上下文长度？
+
+  - id: agent-mem-long-ctx-vs-memory
+    q: 既然上下文窗口越来越长，Agent 还需要单独做记忆系统吗？
+    topics: [agent, agent-memory, context-engineering]
+    difficulty: 3
+    answer_brief: >-
+      需要。长窗口解决「一次能看多少」，记忆系统解决「跨会话持久化、从海量历史里选出该看的、并保持正确和最新」。全量塞历史会遇到 context rot，成本和首 token 延迟随长度上升，用户历史又会无限增长，迟早超出任何窗口；新旧事实混在原始历史里，模型也未必分得清哪个有效。长窗口能让我们放宽 top-k、少做激进压缩，但替代不了写入、更新、遗忘和隔离。
+    key_points:
+      - 持久化：窗口随会话结束清空，跨会话必须外部存储
+      - 选择：历史无限增长，总要选；选得准比放得多有效
+      - 正确性：记忆系统能做更新和失效，原始历史里新旧事实混杂
+      - LongMemEval 报告长上下文模型在完整长历史上准确率明显下降（约 30%）
+      - 长窗口的价值：放宽 top-k、少压缩、单个任务里放更多原文
+    followups:
+      - 什么场景下你会选择直接全量放上下文而不做检索？
+
+  - id: agent-mem-failure-modes
+    q: 长上下文让 Agent 出错，常见有哪几类失败模式？分别怎么治理？
+    topics: [agent, context-engineering]
+    difficulty: 3
+    answer_brief: >-
+      一种常用的归纳是四类：上下文中毒，幻觉或错误进入上下文后被反复引用，比如目标、摘要里混入错误状态；上下文分心，历史太长时模型倾向重复过去的动作而不是推理新方案；上下文混淆，无关内容太多，如塞几十个工具导致选错；上下文冲突，前后信息互相矛盾，如需求分多轮给出时模型过早下了错误结论。对应治理是校验隔离、压缩摘要、按需加载、整合后重来。
+    key_points:
+      - 中毒：错误进入目标 / 摘要后自我强化，关键状态要校验
+      - 分心：定期压缩历史，保留结论、丢掉过程
+      - 混淆：按任务动态筛选工具和文档，不全量挂载
+      - 冲突：多轮分片给需求时效果明显下降，应汇总后重新发起
+      - 定位：记录每步完整上下文 trace，回放找出问题出在哪段
+    followups:
+      - 工具数量多到什么程度会明显影响选择准确率？怎么做工具检索？
+
+  # ---------- 上下文工程：缓存与预算 ----------
+  - id: agent-mem-prompt-caching
+    q: Prompt caching（前缀缓存 / KV cache 复用）的原理是什么？它对 Agent 的成本和延迟有多大影响？
+    topics: [agent, context-engineering, inference]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      模型 prefill 时会为每个输入 token 算出 KV cache；新请求的前缀若与之前某次请求逐 token 完全相同，就能直接复用这段 KV，跳过重复计算。Agent 每一步都要重发系统提示、工具定义和越来越长的历史，输入远多于输出（Manus 报告约 100:1），所以缓存命中能大幅降低成本和首 token 延迟：以 Anthropic 为例，缓存读取价约为普通输入的十分之一。
+    key_points:
+      - 只复用完全相同的前缀，中间任何 token 变了，其后全部失效
+      - 自部署：vLLM 自动前缀缓存（按块哈希）、SGLang RadixAttention（基数树）
+      - Anthropic：cache_control 显式断点，最多 4 个，默认 TTL 5 分钟，可选 1 小时
+      - Anthropic 计价：5 分钟写入约 1.25 倍、读取约 0.1 倍，随模型略有差异
+      - OpenAI：1024 token 以上的前缀自动缓存，可用 prompt_cache_key 提高路由命中
+      - 核心指标：缓存读取 token / 总输入 token
+    followups:
+      - 多实例部署时，怎么让同一会话的请求落到有缓存的机器上？
+      - 缓存命中率突然下降，你怎么排查？
+
+  - id: agent-mem-cache-friendly-layout
+    q: 设计 Agent 的上下文时，怎样排列和维护内容才能提高 prompt cache 命中率？
+    topics: [agent, context-engineering, inference]
+    difficulty: 3
+    hot: true
+    answer_brief: >-
+      原则是前缀稳定、只追加。最稳定的工具定义和系统提示放最前，里面不放精确到秒的时间戳、请求 ID 等每次都变的内容；历史只在末尾追加，不回头修改或删除中间消息；JSON 序列化保证键顺序确定；会话中途不增删工具、不切换模型，需要限制可用工具时用解码约束或在消息里说明，而不是改工具列表。动态信息一律放在最后一个缓存断点之后。
+    key_points:
+      - 顺序：tools → system → 稳定知识 → 历史 → 当前输入
+      - 禁忌：system 里放当前时间、随机抽取的示例、无序 dict / set 序列化
+      - 压缩、截断都会打断前缀，应低频、批量进行
+      - 工具集保持稳定：Manus 用 logits 掩码限制可选工具，而不删除定义
+      - 多租户：公共前缀在前，用户特定内容在后
+      - 监控缓存读取占比，对相邻请求做字节级 diff 找失效点
+    followups:
+      - 业务要求 system prompt 里带当前日期，怎么兼顾缓存？
+
+  - id: agent-mem-token-budget
+    q: Agent 的上下文 token 预算怎么分配？系统提示、工具、记忆、检索结果、历史和输出之间怎么取舍？
+    topics: [agent, context-engineering]
+    difficulty: 3
+    answer_brief: >-
+      先从窗口里扣掉输出预留（含思考 token）和安全余量，再给固定部分（系统提示、工具定义）设硬上限，剩下的按优先级分给当前输入、任务状态、检索结果、记忆和历史。超预算时按优先级裁剪：先清理旧工具结果，再压缩历史，再减少检索条数，最后才动核心指令。关键是每部分都有独立上限并实时计数，而不是拼完才发现超长。
+    key_points:
+      - 输出预留：max_tokens + 推理 token，长任务还要给后续步骤留空间
+      - 固定开销：工具定义可能占几千到上万 token，工具多时要按需加载
+      - 动态部分优先级：当前输入 > 任务状态 > 检索 / 记忆 > 早期历史
+      - 用目标模型的 tokenizer 精确计数，中英文和代码的 token 比例不同
+      - 别把窗口用满：越接近上限，质量越差、成本越高
+    followups:
+      - 检索结果和对话历史抢预算时，你怎么决定？
+
+  - id: agent-mem-token-cost-debug
+    q: 线上 Agent 的 token 消耗突然暴涨，你会怎么排查和优化？
+    topics: [agent, context-engineering]
+    difficulty: 3
+    answer_brief: >-
+      先拆账：按请求统计输入、输出、缓存读写 token 和每个任务的步数，再按功能、Prompt 版本、模型、用户分组，定位是哪类请求、哪一步涨了。常见原因：缓存命中率下降（有人往系统提示里加了时间戳或改了工具列表）；Agent 陷入循环或重试，步数暴增；某个工具开始返回超大结果；历史不压缩导致每轮输入线性增长；检索 top-k 被调大。修复后加步数上限、任务级 token 预算和告警。
+    key_points:
+      - 观测：每步记录 input / output / cache_read / cache_write token 与步数
+      - 缓存：对比相邻请求前缀，找出破坏缓存的改动
+      - 循环：同一工具同参数反复调用，步数分布出现长尾
+      - 膨胀：大工具结果、未压缩历史、过多示例或检索片段
+      - 治理：最大步数、任务级 token 预算、异常告警，按完成任务算单位成本
+    followups:
+      - 怎么在效果基本不降的前提下把成本砍掉一半？

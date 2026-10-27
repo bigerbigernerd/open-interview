@@ -182,7 +182,14 @@ topics:
   agent: Agent
   prompt-engineering: Prompt
   agent-memory: Agent 记忆
+  agent-planning: 规划与推理
+  context-engineering: 上下文工程
   tool-use: 工具调用
+  mcp: MCP / 协议
+  multi-agent: 多 Agent
+  agent-framework: Agent 框架
+  agent-safety: Agent 安全
+  agentic-rl: Agent 训练 / RL
   evaluation: 评估
   multimodal: 多模态
   vector-search: 向量检索

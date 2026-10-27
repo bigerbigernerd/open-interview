@@ -17,6 +17,7 @@
     <a href="#agent" role="tab" data-tab="agent">模拟面试</a>
     <a href="#practice" role="tab" data-tab="practice">自助刷题</a>
     <a href="#allclose" role="tab" data-tab="allclose"><span class="tab-mark">≈</span>手撕</a>
+    <a href="#cards" role="tab" data-tab="cards">记忆卡</a>
   </nav>
   <div class="top-right">
     <span id="status" class="pill">离线</span>
@@ -301,6 +302,53 @@ python3 open-interview/skills/mock-interviewer/scripts/studio.py</code></pre>
       </div>
     </div>
   </section>
+  <!-- ============ 记忆卡 ============ -->
+  <section id="view-cards" class="view" hidden>
+    <div class="cd">
+      <div class="cd-bar">
+        <div class="seg" id="cd-mode" role="group" aria-label="记忆卡">
+          <button type="button" data-v="review">复习</button><button type="button" data-v="stats">复盘</button><button type="button" data-v="browse">卡片</button>
+        </div>
+        <select id="cd-deck" aria-label="卡组"></select>
+        <select id="cd-topic" aria-label="主题"></select>
+        <select id="cd-tag" aria-label="我的标签"></select>
+        <span class="cd-counts" id="cd-counts"></span>
+      </div>
+      <p id="cd-note" class="cd-note" role="status" hidden></p>
+
+      <div id="cd-review">
+        <div class="cd-stage" id="cd-stage">
+          <article class="cd-card" id="cd-card" aria-live="polite">
+            <div class="cd-stamp" id="cd-stamp" aria-hidden="true"></div>
+            <div id="cd-meta" class="chips"></div>
+            <h2 id="cd-q" class="cd-q">加载题库中…</h2>
+            <p id="cd-hint" class="cd-hint">先在心里答一遍，再点卡片或按 <kbd>Space</kbd> 看答案</p>
+            <div id="cd-back" class="cd-back" hidden>
+              <div id="cd-answer" class="md"></div>
+              <div id="cd-tags" class="cd-tags"></div>
+              <p id="cd-info" class="cd-info"></p>
+            </div>
+          </article>
+        </div>
+        <div class="cd-rate" id="cd-rate" hidden>
+          <button type="button" data-g="1" class="g1"><b>← 忘了</b><small></small></button>
+          <button type="button" data-g="2" class="g2"><b>↓ 模糊</b><small></small></button>
+          <button type="button" data-g="3" class="g3"><b>记得 →</b><small></small></button>
+          <button type="button" data-g="4" class="g4"><b>简单 ↑</b><small></small></button>
+        </div>
+        <div class="cd-sub" id="cd-sub">
+          <button type="button" id="cd-flip" class="primary">看答案 <kbd>Space</kbd></button>
+          <button type="button" id="cd-speak">朗读 <kbd>R</kbd></button>
+          <button type="button" id="cd-undo">撤销 <kbd>Z</kbd></button>
+          <span class="cd-keys">看完答案：往右划 / <kbd>→</kbd> 记得，往左划 / <kbd>←</kbd> 忘了</span>
+        </div>
+        <div id="cd-done" class="cd-done" hidden></div>
+      </div>
+      <div id="cd-stats" class="cd-stats" hidden></div>
+      <div id="cd-browse" class="cd-browse" hidden></div>
+      <p class="cd-store" id="cd-store"></p>
+    </div>
+  </section>
 </main>
 
 <div id="report" class="overlay" hidden>
@@ -342,5 +390,7 @@ python3 open-interview/skills/mock-interviewer/scripts/studio.py</code></pre>
 <script src="vendor/codemirror/active-line.min.js"></script>
 <script src="app.js"></script>
 <script src="allclose.js"></script>
+<script src="fsrs.js"></script>
+<script src="cards.js"></script>
 </body>
 </html>

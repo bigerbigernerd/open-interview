@@ -10,7 +10,7 @@ time, follow-ups, then a scored report. Questions are read aloud and you answer 
 
 [中文](README.md) · **English**
 
-[Web interview](#option-1-web-interview-recommended) · [Inside your agent](#option-2-inside-your-agent) · [allclose · 手撕](#allclose--手撕-ml--llm-coding-judged-locally) · [Practice online](https://bigerbigernerd.github.io/open-interview/) · [Question bank](#question-bank) · [Contribute](CONTRIBUTING.md)
+[Web interview](#option-1-web-interview-recommended) · [Inside your agent](#option-2-inside-your-agent) · [allclose · 手撕](#allclose--手撕-ml--llm-coding-judged-locally) · [Flashcards](#flashcards-agent-interview-deck--spaced-repetition) · [Practice online](https://bigerbigernerd.github.io/open-interview/) · [Question bank](#question-bank) · [Contribute](CONTRIBUTING.md)
 
 </div>
 
@@ -23,7 +23,7 @@ time, follow-ups, then a scored report. Questions are read aloud and you answer 
 - This project normalises open-source questions into one **tagged, sourced** format that anyone can extend by pull
   request. The interviewer runs on the agent you are already logged in to: no API key, no extra cost.
 
-## Four ways to use it
+## Five ways to use it
 
 | | For | Start with |
 |---|---|---|
@@ -31,6 +31,7 @@ time, follow-ups, then a scored report. Questions are read aloud and you answer 
 | **Inside your agent** | You already live in Claude Code / Codex | Install the skill, say "mock interview me by voice" |
 | **Practice online** | Nothing to install, just drill questions | [GitHub Pages](https://bigerbigernerd.github.io/open-interview/) |
 | **allclose · 手撕** | Hand-coding rounds for LLM / ML roles | The 手撕 tab in the web app, or `skills/allclose/scripts/allclose.py` |
+| **Flashcards (记忆卡)** | Memorizing the concepts, prepping for AI Agent roles | The 记忆卡 tab: swipe cards like Anki |
 
 ## Option 1: web interview (recommended)
 
@@ -169,9 +170,29 @@ shows the problems and keeps drafts, but judging and follow-ups run locally.
 Inside Claude Code / Codex: install the `allclose` skill and ask for "an LLM coding problem"; the agent sets one,
 judges your file locally and asks follow-ups once it passes. The problem format is in [skills/allclose/SKILL.md](skills/allclose/SKILL.md).
 
+## Flashcards: Agent interview deck + spaced repetition
+
+![Flashcards: flip for the answer, swipe right if you remembered it, left if you didn't](docs/cards.png)
+
+Anki-style review for interview concepts: answer in your head, tap the card to see the answer, then **swipe right
+if you remembered it, left if you didn't** (keys `→` / `←`, `↑` easy, `↓` hard, `Z` undo). The next review is
+scheduled by [FSRS](https://github.com/open-spaced-repetition/fsrs4anki), the scheduler Anki now uses by default.
+
+- **Agent interview deck (315 cards with reference answers, in Chinese)**: agent basics and planning, tool use and MCP,
+  memory and context engineering, multi-agent and frameworks, evaluation / safety / production, RAG, agent training and
+  LLM basics, and system design / project deep-dives / coding. Each card's back has the 30-second answer, the key points
+  and common follow-ups. You can also review all 500+ AI-agent questions in the bank (most without answers) or the whole bank.
+- **Review dashboard**: average recall probability right now, true retention over 30 days, your forgetting curve
+  (FSRS prediction vs what actually happened), daily reviews and retention, the 14-day due forecast, weak spots by
+  tag and topic, and the cards you forget most, each with one-click extra practice.
+- **Tags**: mark cards 重点 / 易错 / 不会 / 项目相关 or your own tags; filter and review by tag.
+- **Export for an AI review**: weak topics and most-forgotten cards, with reference answers, as Markdown.
+- **Where the data lives**: with `studio.py`, in `~/.mock-interviewer/cards/reviews.jsonl` (one line per review; all
+  state is replayed from it). On GitHub Pages, in the browser, with JSON export / import.
+
 ## Question bank
 
-**5,166** questions (893 of them from 60 interview reports) from 18 permissively licensed open-source projects, each with a link back to its source. Question sources:
+**5,481** questions: 5,166 (893 of them from 60 interview reports) from 18 permissively licensed open-source projects, each with a link back to its source, plus the 315 answered cards of the Agent interview deck above. Question sources:
 
 | Source | Questions | Area | License |
 |---|---:|---|---|
@@ -228,7 +249,8 @@ skills/mock-interviewer/    the installable skill
   scripts/voice.py          voice bridge for agent-driven mode (stdlib only)
   scripts/studio.py         web interview server (stdlib only)
   scripts/backends.py       adapters that run local agent CLIs
-  ui/                       interview + practice page (no dependencies, no build)
+  scripts/cards.py          flashcard review log storage
+  ui/                       interview, practice, 手撕 and flashcard pages (no dependencies, no build; fsrs.js schedules)
   data/index.json           question index built by tools/build.py
 tools/build.py              validate bank/ and the allclose problems, build the indexes
 tools/import_upstream.py    re-import upstream question banks
