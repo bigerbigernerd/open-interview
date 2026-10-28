@@ -189,6 +189,9 @@ scheduled by [FSRS](https://github.com/open-spaced-repetition/fsrs4anki), the sc
 - **Export for an AI review**: weak topics and most-forgotten cards, with reference answers, as Markdown.
 - **Where the data lives**: with `studio.py`, in `~/.mock-interviewer/cards/reviews.jsonl` (one line per review; all
   state is replayed from it). On GitHub Pages, in the browser, with JSON export / import.
+- **Local extra decks**: drop a `cards-extra.json` into `skills/mock-interviewer/data/` (git-ignored) and the flashcards
+  merge its questions in, adding 面经 / hot / per-area / per-course decks; course decks introduce new cards in lecture
+  order. `$math$` in questions and answers renders with KaTeX. The format is in `mergeExtra` in `ui/cards.js`.
 
 ## Question bank
 

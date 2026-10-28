@@ -179,6 +179,9 @@ python3 scripts/allclose.py hint attention    # 下一条提示
 - **导出给 AI 复盘**：把薄弱主题和最常忘的题连同参考答案导出成 Markdown，贴给任意 AI 让它出追问。
 - **记录存在哪**：用 `studio.py` 打开时存在本机 `~/.mock-interviewer/cards/reviews.jsonl`（每次复习一行，状态都从这个
   日志重算，换端口、换浏览器都不丢）；在线页面存在浏览器里，可以导出 / 导入 JSON 搬到本地。
+- **本地扩展卡组**：在 `skills/mock-interviewer/data/` 放一个 `cards-extra.json`（已加入 `.gitignore`，不进仓库），
+  记忆卡会把里面的题合进来，卡组下拉框多出「面经真题 / 高频 / 按领域 / 按课程」几组，课程卡组按讲次顺序出新卡。
+  答案和题目里的 `$公式$` 用 KaTeX 渲染。文件格式见 `ui/cards.js` 里的 `mergeExtra`。
 
 | 分组 | 张数 | 内容 |
 |---|---|---|

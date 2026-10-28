@@ -594,7 +594,12 @@ body.ac-mode main { max-width: none; padding: 0; }
 .cd-back { border-top: 1px dashed var(--line-2); padding-top: 14px; display: flex; flex-direction: column; gap: 12px; }
 .cd-back .md { font-size: 15px; }
 .cd-back .md > :first-child { margin-top: 0; }
-.cd-src { font-size: 12px; color: var(--mute); }
+.cd-src { font-size: 12px; color: var(--mute); margin: 0; line-height: 1.6; }
+.cd-src a { color: var(--mute); }
+.cd-bar select#cd-deck { max-width: 380px; }
+@media (max-width: 600px) { .cd-bar select#cd-deck { max-width: none; flex: 1 1 100%; order: 1; } .cd-bar select:not(#cd-deck) { order: 2; } .cd-counts { order: 3; } }
+.md .katex-display { overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+.cd-q .katex, .cd-blist .katex { font-size: 1em; }
 .cd-info { margin: 0; font: 12px var(--mono); color: var(--mute); }
 .cd-stamp {
   position: absolute; top: 18px; padding: 4px 12px; border: 2px solid; border-radius: 8px;

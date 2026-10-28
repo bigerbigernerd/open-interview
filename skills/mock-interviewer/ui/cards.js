@@ -11,23 +11,20 @@
   const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   // Agent 为主，其他为辅: core topics come first in the topic picker and in the order new cards are introduced.
+  // Topic slugs from both bank/tags.yml and the local question bank (cards-extra.json), which names a few differently.
   const CORE = ['agent', 'agent-planning', 'tool-use', 'mcp', 'agent-memory', 'context-engineering', 'multi-agent',
-    'agent-framework', 'agent-safety', 'evaluation'];
-  const AUX = ['rag', 'vector-search', 'prompt-engineering', 'agentic-rl', 'llm', 'transformer', 'fine-tuning', 'rlhf',
-    'inference', 'multimodal'];
-  const hasAnswer = (q) => !!(q.answer_brief || (q.key_points && q.key_points.length));
-  const DECKS = {
-    agent: { name: 'Agent 面试卡组', test: (q) => q.id.startsWith('agent-') },
-    'agent-all': { name: 'Agent 岗全部题（含无答案）', test: (q) => q.id.startsWith('agent-') || (q.roles || []).includes('ai-agent') },
-    answered: { name: '题库里所有有答案的题', test: hasAnswer },
-    all: { name: '整个题库', test: () => true },
-  };
+    'agent-framework', 'agent-safety', 'agent-eval', 'agent-engineering', 'evaluation'];
+  const AUX = ['rag', 'vector-search', 'prompt-engineering', 'agentic-rl', 'llm', 'llm-basics', 'transformer', 'attention',
+    'fine-tuning', 'rlhf', 'reasoning', 'inference', 'multimodal', 'vlm'];
+  const hasAnswer = (q) => !!(q.answer || q.answer_brief || (q.key_points && q.key_points.length));
+  const AREAS = [['Agent', 'Agent'], ['LLM', '大模型 LLM'], ['多模态', '多模态 / 视觉 / 生成'], ['RL', '强化学习'], ['通用', '机器学习通用']];
+  let DECKS = {};
   const QUICK_TAGS = ['重点', '易错', '不会', '项目相关'];
   const STATE_NAME = { new: '新卡', learning: '学习中', relearning: '重新学习', review: '复习' };
   const GRADE = { 1: '忘了', 2: '模糊', 3: '记得', 4: '简单' };
 
   const S = {
-    loading: null, bank: null, byId: new Map(), order: new Map(),
+    loading: null, bank: null, byId: new Map(), order: new Map(), extra: false, courses: new Map(),
     log: [], meta: { tags: {}, susp: {}, settings: {} }, remote: false, home: '',
     cards: new Map(), mode: 'review', cur: null, flipped: false, shownAt: 0, cram: null, cramName: '',
     pending: [], flushing: false, session: { n: 0, ok: 0 }, browseOpen: '', browseLimit: 100,
@@ -48,8 +45,11 @@
   function load() {
     if (S.loading) return S.loading;
     S.loading = (async () => {
-      S.bank = await window.OI.bank();
+      const [base, extra] = await Promise.all([window.OI.bank(),
+        fetch('data/cards-extra.json', { cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).catch(() => null)]);
+      S.bank = mergeExtra(base, extra);
       S.bank.questions.forEach((q, i) => { S.byId.set(q.id, q); S.order.set(q.id, i); });
+      buildDecks();
       try {
         const r = await fetch('api/cards', { cache: 'no-store' });
         const d = r.ok ? await r.json() : null;
@@ -66,6 +66,38 @@
     return S.loading;
   }
   function recompute() { S.cards = F.replay(S.log, opt()); }
+
+  // A local, git-ignored data/cards-extra.json (exported from the private question bank) adds the course-notes and
+  // 面经 cards and fills in 面经 provenance for the Agent deck. The practice tab keeps using index.json untouched.
+  function mergeExtra(base, x) {
+    if (!x || !Array.isArray(x.questions)) return base;
+    S.extra = true;
+    S.courses = new Map((x.courses || []).map((c) => [c.slug, c]));
+    const ov = x.overrides || {}, have = new Set(base.questions.map((q) => q.id));
+    const questions = base.questions.map((q) => (ov[q.id] ? Object.assign({}, q, ov[q.id]) : q))
+      .concat(x.questions.filter((q) => !have.has(q.id)));
+    const tags = Object.assign({}, base.tags);
+    for (const k of ['topics', 'types', 'roles', 'companies']) tags[k] = Object.assign({}, x[k] || {}, base.tags[k] || {});
+    return Object.assign({}, base, { questions, tags });
+  }
+  function buildDecks() {
+    const D = { agent: { name: 'Agent 面试卡组', group: '推荐', test: (q) => q.id.startsWith('agent-') } };
+    if (S.extra) {
+      D.asked = { name: '面经真题（面试官真问过）', group: '推荐', test: (q) => !!(q.asked && q.asked.length) };
+      D.hot = { name: '高频题', group: '推荐', test: (q) => !!q.hot };
+      for (const [a, name] of AREAS) D['area-' + a] = { name, group: '按领域', test: (q) => q.area === a };
+      for (const c of S.courses.values()) {
+        D['course-' + c.slug] = { name: `NO.${String(c.no).padStart(2, '0')} ${c.school} ${c.code} ${c.title}`,
+          group: '名校课程笔记（按讲次出新卡）', ordered: true, test: (q) => q.course === c.slug };
+      }
+    } else {
+      D['agent-all'] = { name: 'Agent 岗全部题（含无答案）', group: '其他', test: (q) => q.id.startsWith('agent-') || (q.roles || []).includes('ai-agent') };
+    }
+    D.answered = { name: '所有有答案的题', group: '其他', test: hasAnswer };
+    D.all = { name: '整个题库', group: '其他', test: () => true };
+    for (const d of Object.values(D)) d.n = S.bank.questions.reduce((n, q) => n + (d.test(q) ? 1 : 0), 0);
+    DECKS = D;
+  }
 
   function addEvent(e) {
     S.log.push(e);
@@ -128,7 +160,7 @@
     learn.sort((a, b) => a.due - b.due);
     due.sort((a, b) => (a.due - b.due) || (F.retrievability(a, now) - F.retrievability(b, now)));
     const quota = Math.max(0, settings().newPerDay + extraNew() - newToday());
-    fresh.sort(newOrder);
+    fresh.sort(DECKS[S.filters.deck].ordered ? (a, b) => S.order.get(a.id) - S.order.get(b.id) : newOrder);
     return { learn, due, fresh: fresh.slice(0, quota), freshAll: fresh.length, learnNow: learn.filter((c) => c.due <= now) };
   }
   function pickNext(now = Date.now()) {
@@ -163,6 +195,23 @@
   }
   const pct = (x) => (x == null || isNaN(x) ? '—' : `${Math.round(x * 100)}%`);
 
+  // $…$ and $$…$$ are cut out before markdown / escaping and rendered with KaTeX (plain code if it is missing).
+  const MATH = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
+  function tex(src, display) {
+    if (window.katex) {
+      try { return window.katex.renderToString(src, { displayMode: display, throwOnError: false }); } catch { /* fall through */ }
+    }
+    return `<code>${esc(src)}</code>`;
+  }
+  function withMath(src, render) {
+    const keep = [];
+    const s = String(src || '').replace(MATH, (_, d, i) => { keep.push(d != null ? [d, true] : [i, false]); return `\u0000${keep.length - 1}\u0000`; });
+    return render(s).replace(/\u0000(\d+)\u0000/g, (_, n) => tex(...keep[+n]));
+  }
+  const mdm = (src) => withMath(src, md);
+  const qHtml = (s) => withMath(s, esc);
+  const lectureOf = (q) => (/^\d/.test(q.lecture || '') ? `原课程第 ${q.lecture} 讲` : q.lecture || '');
+
   // ---------------- view switching ----------------
   async function show(sub) {
     try {
@@ -195,7 +244,9 @@
   }
   function renderPickers() {
     const f = S.filters;
-    $('#cd-deck').innerHTML = Object.entries(DECKS).map(([k, d]) => `<option value="${k}">${esc(d.name)}</option>`).join('');
+    const groups = {};
+    for (const [k, d] of Object.entries(DECKS)) (groups[d.group] = groups[d.group] || []).push(`<option value="${k}">${esc(d.name)}（${d.n}）</option>`);
+    $('#cd-deck').innerHTML = Object.entries(groups).map(([g, o]) => `<optgroup label="${esc(g)}">${o.join('')}</optgroup>`).join('');
     $('#cd-deck').value = f.deck;
     const deck = DECKS[f.deck];
     const counts = {};
@@ -252,21 +303,33 @@
       `<span class="chip st-${c ? c.state : 'new'}">${STATE_NAME[c ? c.state : 'new']}</span>`,
       ...(q.topics || []).slice(0, 3).map((x) => `<span class="chip">${esc(topicName(x))}</span>`),
       q.type && q.type !== 'technical' ? `<span class="chip">${esc((t.types[q.type] && t.types[q.type].name) || q.type)}</span>` : '',
-      cos.length ? `<span class="chip co">${esc(cos.slice(0, 2).join('、'))} 问过</span>` : '',
+      cos.length ? `<span class="chip co">${esc(cos.slice(0, 2).join('、'))}${cos.length > 2 ? ` 等 ${cos.length} 家` : ''} 问过</span>` : '',
+      q.course && S.courses.has(q.course) ? `<span class="chip">${esc(S.courses.get(q.course).code)} 第 ${q.chapter} 章</span>` : '',
       q.difficulty ? `<span class="chip">难度 ${q.difficulty}/5</span>` : '',
       q.hot ? '<span class="chip hot">高频</span>' : '',
     ].join('');
   }
   function answerHtml(q) {
     const parts = [];
+    if (q.answer) parts.push(q.answer);
     if (q.answer_brief) parts.push(q.answer_brief);
     if (q.key_points && q.key_points.length) parts.push('**要点**\n' + q.key_points.map((k) => `- ${k}`).join('\n'));
     if (q.followups && q.followups.length) parts.push('**常见追问**\n' + q.followups.map((k) => `- ${k}`).join('\n'));
     if (!parts.length) parts.push('这道题还没有参考答案。先自己回忆、说一遍，再按记得的程度打分。');
     const src = S.bank.sources[q.src] || {};
     const url = q.url || src.url;
-    const tail = url ? `<p class="cd-src">出处：<a href="${esc(url)}" target="_blank" rel="noopener">${esc(src.name || url)} ↗</a></p>` : '';
-    return md(parts.join('\n\n')) + tail;
+    let tail = url ? `<p class="cd-src">出处：<a href="${esc(url)}" target="_blank" rel="noopener">${esc(src.name || url)} ↗</a></p>` : '';
+    const c = q.course && S.courses.get(q.course);
+    if (c) tail += `<p class="cd-src">出自《名校 AI 课程笔记》NO.${String(c.no).padStart(2, '0')} ${esc(c.school)} ${esc(c.code)} ${esc(c.title)} · 第 ${q.chapter} 章「${esc(q.lecture_title || '')}」（${esc(lectureOf(q))}）</p>`;
+    if (q.asked && q.asked.length) {
+      const cos = S.bank.tags.companies;
+      const links = q.asked.slice(0, 6).map((a) => {
+        const label = [(cos[a.company] && cos[a.company].name) || a.company || '未写公司', a.role, a.round].filter(Boolean).join(' · ');
+        return a.url ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(label)} ↗</a>` : esc(label);
+      });
+      tail += `<p class="cd-src">面经里问过 ${q.asked.length} 次：${links.join('；')}${q.asked.length > 6 ? ' 等' : ''}</p>`;
+    }
+    return mdm(parts.join('\n\n')) + tail;
   }
   function cardInfo(q, now = Date.now()) {
     const c = S.cards.get(q.id);
@@ -308,7 +371,7 @@
     card.style.transform = '';
     $('#cd-stamp').className = 'cd-stamp';
     $('#cd-meta').innerHTML = cardChips(q);
-    $('#cd-q').textContent = q.q;
+    $('#cd-q').innerHTML = qHtml(q.q);
     $('#cd-hint').hidden = S.flipped;
     $('#cd-back').hidden = !S.flipped;
     $('#cd-rate').hidden = !S.flipped;
@@ -759,7 +822,7 @@
       const c = S.cards.get(q.id), open = S.browseOpen === q.id;
       return `<li class="${open ? 'open' : ''}" data-id="${esc(q.id)}"><button class="cd-brow" type="button">
           <span class="chip st-${c ? c.state : 'new'}">${STATE_NAME[c ? c.state : 'new']}</span>
-          <span class="q">${esc(q.q)}</span>
+          <span class="q">${qHtml(q.q)}</span>
           <span class="m">${c ? `${pct(F.retrievability(c, now))} · ${fmtDue(c, now)}` : hasAnswer(q) ? '' : '无答案'}${tagsOf(q.id).map((t) => ` <i>#${esc(t)}</i>`).join('')}</span></button>
         ${open ? `<div class="cd-bdetail"><div class="chips">${cardChips(q)}</div><div class="md">${answerHtml(q)}</div>
           <p class="cd-cap">${esc(cardInfo(q, now))}</p><div class="cd-tags"></div>
@@ -813,6 +876,7 @@
     st.hard.forEach((c, i) => {
       const q = S.byId.get(c.id) || { q: c.id };
       lines.push(`### ${i + 1}. ${q.q}`, '', `忘过 ${c.lapses} 次，此刻记得的概率 ${pct(F.retrievability(c, now))}${tagsOf(c.id).length ? '，标签 ' + tagsOf(c.id).map((t) => '#' + t).join(' ') : ''}`, '');
+      if (q.answer) lines.push(`参考答案：${q.answer}`, '');
       if (q.answer_brief) lines.push(`参考答案：${q.answer_brief}`, '');
       if (q.key_points) lines.push(...q.key_points.map((k) => `- ${k}`), '');
     });
@@ -853,7 +917,7 @@
   for (const id of ['#cd-deck', '#cd-topic', '#cd-tag']) $(id).onchange = onFilter;
   $('#cd-flip').onclick = flip;
   $('#cd-undo').onclick = undo;
-  $('#cd-speak').onclick = () => { if (S.cur && !S.cur.done) window.OI.speak(S.flipped && S.cur.answer_brief ? S.cur.answer_brief : S.cur.q); };
+  $('#cd-speak').onclick = () => { if (S.cur && !S.cur.done) window.OI.speak(S.flipped && (S.cur.answer_brief || S.cur.answer) ? (S.cur.answer_brief || S.cur.answer).replace(/\$/g, '') : S.cur.q.replace(/\$/g, '')); };
   $('#cd-rate').querySelectorAll('button').forEach((b) => { b.onclick = () => rate(+b.dataset.g); });
   bindSwipe();
   let resizeTimer = 0;

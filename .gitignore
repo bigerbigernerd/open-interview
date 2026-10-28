@@ -4,3 +4,6 @@ __pycache__/
 .DS_Store
 node_modules/
 _site/
+
+# 本地题库导出（含付费课程内容），不进公开仓库
+skills/mock-interviewer/data/cards-extra.json
