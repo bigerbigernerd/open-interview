@@ -1,5 +1,6 @@
-/* 记忆卡: Anki-style flashcards over the question bank. Flip a card, swipe right if you remembered it and
- * left if you didn't; FSRS (fsrs.js) schedules the next review. The review log is the only record: the studio
+/* 记忆卡: flashcards over the question bank. Swipe right if you know the answer, left if you don't (either side
+ * of the card; a left swipe on the question shows the answer first); FSRS (fsrs.js) schedules the next review.
+ * The heart keeps a card in 我的收藏. The review log is the only record: the studio
  * keeps it in ~/.mock-interviewer/cards/, the static site in localStorage. 复盘 shows retention, the
  * forgetting curve and per-tag weak spots, all replayed from that log. */
 (() => {
@@ -20,13 +21,14 @@
   const AREAS = [['Agent', 'Agent'], ['LLM', '大模型 LLM'], ['多模态', '多模态 / 视觉 / 生成'], ['RL', '强化学习'], ['通用', '机器学习通用']];
   let DECKS = {};
   const QUICK_TAGS = ['重点', '易错', '不会', '项目相关'];
+  const FAV = '收藏'; // the heart is this tag, so 收藏 also works in the tag filter and the per-tag stats
   const STATE_NAME = { new: '新卡', learning: '学习中', relearning: '重新学习', review: '复习' };
   const GRADE = { 1: '忘了', 2: '模糊', 3: '记得', 4: '简单' };
 
   const S = {
     loading: null, bank: null, byId: new Map(), order: new Map(), extra: false, courses: new Map(),
     log: [], meta: { tags: {}, susp: {}, settings: {} }, remote: false, home: '',
-    cards: new Map(), mode: 'review', cur: null, flipped: false, shownAt: 0, cram: null, cramName: '',
+    cards: new Map(), mode: 'review', cur: null, flipped: false, missed: false, shownAt: 0, cram: null, cramName: '',
     pending: [], flushing: false, session: { n: 0, ok: 0 }, browseOpen: '', browseLimit: 100,
     filters: Object.assign({ deck: 'agent', topic: '', tag: '' }, store.get('cards.filters', {})),
     browse: { text: '', state: '' },
@@ -81,7 +83,10 @@
     return Object.assign({}, base, { questions, tags });
   }
   function buildDecks() {
-    const D = { agent: { name: 'Agent 面试卡组', group: '推荐', test: (q) => q.id.startsWith('agent-') } };
+    const D = {
+      agent: { name: 'Agent 面试卡组', group: '推荐', test: (q) => q.id.startsWith('agent-') },
+      fav: { name: '我的收藏 ♥', group: '推荐', test: (q) => tagsOf(q.id).includes(FAV) },
+    };
     if (S.extra) {
       D.asked = { name: '面经真题（面试官真问过）', group: '推荐', test: (q) => !!(q.asked && q.asked.length) };
       D.hot = { name: '高频题', group: '推荐', test: (q) => !!q.hot };
@@ -293,6 +298,7 @@
     if (!id) { S.cur = { done: true }; renderDone(); return; }
     S.cur = S.byId.get(id) || { id, q: `（题库里已经没有这道题：${id}）`, missing: true };
     S.flipped = false;
+    S.missed = false;
     S.shownAt = Date.now();
     renderCard();
   }
@@ -341,7 +347,7 @@
   }
   function tagEditor(id) {
     const mine = tagsOf(id);
-    const all = [...new Set([...QUICK_TAGS, ...Object.values(S.meta.tags).flat()])];
+    const all = [...new Set([...QUICK_TAGS, ...Object.values(S.meta.tags).flat()])].filter((t) => t !== FAV);
     return all.map((t) => `<button type="button" class="tagbtn" data-tag="${esc(t)}" aria-pressed="${mine.includes(t)}">${esc(t)}</button>`).join('') +
       `<input class="tagin" placeholder="+ 标签" maxlength="20" aria-label="添加标签">`;
   }
@@ -359,7 +365,21 @@
     if (on === true || !cur.has(tag)) cur.add(tag); else cur.delete(tag);
     if (cur.size) S.meta.tags[id] = [...cur]; else delete S.meta.tags[id];
     saveMeta();
+    if (tag === FAV) buildDecks();
     renderPickers();
+  }
+  const isFav = (id) => tagsOf(id).includes(FAV);
+  function toggleFav(id) {
+    if (!id) return;
+    toggleTag(id, FAV);
+    const b = $('#cd-fav');
+    if (S.cur && S.cur.id === id) {
+      b.setAttribute('aria-pressed', String(isFav(id)));
+      b.classList.remove('beat');
+      void b.offsetWidth;
+      if (isFav(id)) b.classList.add('beat');
+    }
+    if (S.mode === 'browse') renderBrowse();
   }
   function renderCard() {
     const q = S.cur;
@@ -372,9 +392,13 @@
     $('#cd-stamp').className = 'cd-stamp';
     $('#cd-meta').innerHTML = cardChips(q);
     $('#cd-q').innerHTML = qHtml(q.q);
+    $('#cd-fav').setAttribute('aria-pressed', String(isFav(q.id)));
+    $('#cd-fav').classList.remove('beat');
     $('#cd-hint').hidden = S.flipped;
+    $('#cd-miss').hidden = !S.missed;
     $('#cd-back').hidden = !S.flipped;
-    $('#cd-rate').hidden = !S.flipped;
+    $('#cd-rate').hidden = S.missed;
+    $('#cd-next').hidden = !S.missed;
     $('#cd-flip').hidden = S.flipped;
     if (S.flipped) {
       $('#cd-answer').innerHTML = answerHtml(q);
@@ -382,9 +406,11 @@
       const box = $('#cd-tags');
       const redraw = () => { box.innerHTML = tagEditor(q.id); bindTags(box, q.id, redraw); };
       redraw();
+    }
+    if (!S.missed) {
       const now = Date.now();
       const prev = F.preview(S.cards.get(q.id) || F.fresh(q.id), now, opt());
-      $('#cd-rate').querySelectorAll('button').forEach((b) => { b.querySelector('small').textContent = fmtIvl(prev[b.dataset.g], now); });
+      $('#cd-rate').querySelectorAll('button[data-g]').forEach((b) => { b.querySelector('small').textContent = `${fmtIvl(prev[b.dataset.g], now)}后再见`; });
     }
     renderCounts();
     $('#cd-undo').disabled = !lastReview();
@@ -395,7 +421,9 @@
     renderCard();
   }
   function rate(g, dir) {
-    if (!S.cur || S.cur.done || !S.flipped) return;
+    if (!S.cur || S.cur.done || S.cur.missing || ![1, 2, 3, 4].includes(g)) return;
+    dir = dir || (g === F.AGAIN ? 'left' : 'right');
+    if (S.missed) { flyOut(dir, nextCard); return; } // already recorded; this just moves on
     const e = { c: S.cur.id, t: Date.now(), r: g, ms: Math.min(Date.now() - S.shownAt, 36e5 - 1) };
     if (S.cram) e.x = 1;
     addEvent(e);
@@ -403,7 +431,15 @@
     S.session.n++;
     if (g >= 2) S.session.ok++;
     if (S.cram) { const id = S.cram.shift(); if (g === 1) S.cram.push(id); }
-    flyOut(dir || { 1: 'left', 2: 'down', 3: 'right', 4: 'up' }[g], nextCard);
+    if (g === F.AGAIN && !S.flipped) { // didn't know it: show the answer before the next card
+      S.missed = true;
+      S.flipped = true;
+      $('#cd-card').style.transform = '';
+      $('#cd-stamp').className = 'cd-stamp';
+      renderCard();
+      return;
+    }
+    flyOut(dir, nextCard);
   }
   function flyOut(dir, then) {
     const card = $('#cd-card');
@@ -431,12 +467,14 @@
     if (S.cram && e.x) { const i = S.cram.lastIndexOf(e.c); if (e.r === 1 && i > 0) S.cram.splice(i, 1); S.cram.unshift(e.c); }
     S.cur = S.byId.get(e.c) || { id: e.c, q: e.c, missing: true };
     S.flipped = true;
+    S.missed = false;
     S.shownAt = Date.now();
     if (S.mode !== 'review') setMode('review'); else renderCard();
   }
   function renderDone() {
     $('#cd-stage').hidden = true;
     $('#cd-rate').hidden = true;
+    $('#cd-next').hidden = true;
     $('#cd-sub').hidden = true;
     const box = $('#cd-done');
     box.hidden = false;
@@ -472,13 +510,16 @@
     setMode('review');
   }
 
-  // Swipe: drag the flipped card right (记得) or left (忘了). Vertical drags stay page scrolls.
+  // Swipe: drag the card right (记住了) or left (不知道), question or answer side. Vertical drags stay page scrolls.
   function bindSwipe() {
     const card = $('#cd-card'), stamp = $('#cd-stamp');
-    let drag = null;
-    card.addEventListener('click', (e) => { if (!S.flipped && !e.target.closest('a,button,input')) flip(); });
+    let drag = null, dragEnd = 0;
+    card.addEventListener('click', (e) => {
+      if (Date.now() - dragEnd < 350 || e.target.closest('a,button,input')) return; // the click that ends a drag
+      if (!S.flipped) flip();
+    });
     card.addEventListener('pointerdown', (e) => {
-      if (!S.flipped || e.button !== 0 || e.target.closest('a,button,input')) return;
+      if (!S.cur || S.cur.done || e.button !== 0 || e.target.closest('a,button,input')) return;
       drag = { x: e.clientX, y: e.clientY, id: e.pointerId, moved: false };
     });
     card.addEventListener('pointermove', (e) => {
@@ -493,14 +534,15 @@
       }
       card.style.transform = `translateX(${dx}px) rotate(${Math.max(-6, Math.min(6, dx / 50))}deg)`;
       const k = Math.min(1, Math.abs(dx) / threshold());
-      stamp.className = 'cd-stamp ' + (dx > 0 ? 'good' : 'again');
-      stamp.textContent = dx > 0 ? '记得' : '忘了';
+      stamp.className = 'cd-stamp ' + (S.missed ? 'next' : dx > 0 ? 'good' : 'again');
+      stamp.textContent = S.missed ? '下一张' : dx > 0 ? '记住了' : '不知道';
       stamp.style.opacity = k;
     });
     const end = (e) => {
       if (!drag || e.pointerId !== drag.id) return;
       const dx = e.clientX - drag.x, moved = drag.moved;
       drag = null;
+      if (moved) dragEnd = Date.now();
       card.classList.remove('dragging');
       stamp.style.opacity = '';
       if (!moved) return;
@@ -827,6 +869,7 @@
         ${open ? `<div class="cd-bdetail"><div class="chips">${cardChips(q)}</div><div class="md">${answerHtml(q)}</div>
           <p class="cd-cap">${esc(cardInfo(q, now))}</p><div class="cd-tags"></div>
           <div class="cd-set"><button data-act="cram" class="primary">加练这张</button>
+          <button data-act="fav" class="cd-favbtn" aria-pressed="${isFav(q.id)}">${isFav(q.id) ? '♥ 已收藏' : '♡ 收藏'}</button>
           <button data-act="susp">${S.meta.susp[q.id] ? '恢复' : '暂停（不再出现）'}</button></div></div>` : ''}</li>`;
     }).join('') + (rows.length > S.browseLimit ? `<li class="more"><button class="link" id="cd-bmore">再显示 100 张</button></li>` : '');
     const more = $('#cd-bmore');
@@ -839,6 +882,7 @@
         const redraw = () => { tags.innerHTML = tagEditor(id); bindTags(tags, id, () => { redraw(); }); };
         redraw();
         li.querySelector('[data-act="cram"]').onclick = () => startCram('单张', [id]);
+        li.querySelector('[data-act="fav"]').onclick = () => toggleFav(id);
         li.querySelector('[data-act="susp"]').onclick = () => {
           if (S.meta.susp[id]) delete S.meta.susp[id]; else S.meta.susp[id] = Date.now();
           saveMeta();
@@ -916,9 +960,11 @@
   $('#cd-mode').querySelectorAll('button').forEach((b) => { b.onclick = () => { if (b.dataset.v === 'review') S.session = { n: 0, ok: 0 }; setMode(b.dataset.v); }; });
   for (const id of ['#cd-deck', '#cd-topic', '#cd-tag']) $(id).onchange = onFilter;
   $('#cd-flip').onclick = flip;
+  $('#cd-next').onclick = () => rate(F.GOOD, 'right');
+  $('#cd-fav').onclick = (e) => { e.stopPropagation(); if (S.cur && !S.cur.done) toggleFav(S.cur.id); };
   $('#cd-undo').onclick = undo;
   $('#cd-speak').onclick = () => { if (S.cur && !S.cur.done) window.OI.speak(S.flipped && (S.cur.answer_brief || S.cur.answer) ? (S.cur.answer_brief || S.cur.answer).replace(/\$/g, '') : S.cur.q.replace(/\$/g, '')); };
-  $('#cd-rate').querySelectorAll('button').forEach((b) => { b.onclick = () => rate(+b.dataset.g); });
+  $('#cd-rate').querySelectorAll('button[data-g]').forEach((b) => { b.onclick = () => rate(+b.dataset.g); });
   bindSwipe();
   let resizeTimer = 0;
   window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (S.mode === 'stats' && !$('#view-cards').hidden) renderStats(); }, 200); });
@@ -931,11 +977,10 @@
     if (k === ' ' || k === 'Enter') {
       if (t && t.tagName === 'BUTTON' && k === 'Enter') return;
       e.preventDefault();
-      if (!S.flipped) flip(); else rate(F.GOOD);
-    } else if (S.flipped && (k === 'ArrowLeft' || k === '1')) { e.preventDefault(); rate(F.AGAIN); }
-    else if (S.flipped && (k === 'ArrowDown' || k === '2')) { e.preventDefault(); rate(F.HARD); }
-    else if (S.flipped && (k === 'ArrowRight' || k === '3')) { e.preventDefault(); rate(F.GOOD); }
-    else if (S.flipped && (k === 'ArrowUp' || k === '4')) { e.preventDefault(); rate(F.EASY); }
+      if (S.missed) rate(F.GOOD); else if (!S.flipped) flip(); else rate(F.GOOD);
+    } else if (k === 'ArrowLeft' || k === '1') { e.preventDefault(); rate(F.AGAIN); }
+    else if (k === 'ArrowRight' || k === '3') { e.preventDefault(); rate(F.GOOD); }
+    else if (k === 'f' || k === 'F') { if (S.cur && !S.cur.done) toggleFav(S.cur.id); }
     else if (k === 'z' || k === 'Z') undo();
     else if (k === 'r' || k === 'R') $('#cd-speak').click();
   });

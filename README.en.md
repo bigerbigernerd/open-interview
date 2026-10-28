@@ -174,8 +174,9 @@ judges your file locally and asks follow-ups once it passes. The problem format 
 
 ![Flashcards: flip for the answer, swipe right if you remembered it, left if you didn't](docs/cards.png)
 
-Anki-style review for interview concepts: answer in your head, tap the card to see the answer, then **swipe right
-if you remembered it, left if you didn't** (keys `→` / `←`, `↑` easy, `↓` hard, `Z` undo). The next review is
+Anki-style review for interview concepts: answer in your head, then **swipe right if you know it, left if you
+don't** (keys `→` / `←`, `Space` flips, `F` favourites, `Z` undo). Either side of the card swipes; a left swipe on the
+question shows the answer before moving on. The heart keeps a card in a 我的收藏 deck. The next review is
 scheduled by [FSRS](https://github.com/open-spaced-repetition/fsrs4anki), the scheduler Anki now uses by default.
 
 - **Agent interview deck (315 cards with reference answers, in Chinese)**: agent basics and planning, tool use and MCP,

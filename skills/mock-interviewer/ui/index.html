@@ -5,7 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Open Interview</title>
 <meta name="description" content="开源面试题库 + 语音模拟面试：浏览器朗读问题、语音作答，由你的 AI agent 担任面试官。">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%235eead4' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%235eead4'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%23b5502b' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%23b5502b'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#f5ede1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;700&display=swap" media="print" onload="this.media='all'">
 <link rel="stylesheet" href="vendor/codemirror/codemirror.min.css">
 <link rel="stylesheet" href="vendor/katex/katex.min.css">
 <link rel="stylesheet" href="style.css">
@@ -321,9 +325,13 @@ python3 open-interview/skills/mock-interviewer/scripts/studio.py</code></pre>
         <div class="cd-stage" id="cd-stage">
           <article class="cd-card" id="cd-card" aria-live="polite">
             <div class="cd-stamp" id="cd-stamp" aria-hidden="true"></div>
+            <button type="button" id="cd-fav" class="cd-fav" aria-pressed="false" aria-label="收藏这张卡" title="收藏（F）">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.6s-7.6-4.5-9.4-9.3C1.4 8 3.4 4.6 6.9 4.4c2-.1 3.7 1 5.1 2.9 1.4-1.9 3.1-3 5.1-2.9 3.5.2 5.5 3.6 4.3 6.9-1.8 4.8-9.4 9.3-9.4 9.3z"/></svg>
+            </button>
             <div id="cd-meta" class="chips"></div>
             <h2 id="cd-q" class="cd-q">加载题库中…</h2>
-            <p id="cd-hint" class="cd-hint">先在心里答一遍，再点卡片或按 <kbd>Space</kbd> 看答案</p>
+            <p id="cd-hint" class="cd-hint">先在心里答一遍。点卡片翻面看答案；会了往右划，不会往左划。</p>
+            <p id="cd-miss" class="cd-miss" hidden>已记为「不知道」，很快会再出现。看完答案，往任意方向划走继续。</p>
             <div id="cd-back" class="cd-back" hidden>
               <div id="cd-answer" class="md"></div>
               <div id="cd-tags" class="cd-tags"></div>
@@ -331,17 +339,16 @@ python3 open-interview/skills/mock-interviewer/scripts/studio.py</code></pre>
             </div>
           </article>
         </div>
-        <div class="cd-rate" id="cd-rate" hidden>
-          <button type="button" data-g="1" class="g1"><b>← 忘了</b><small></small></button>
-          <button type="button" data-g="2" class="g2"><b>↓ 模糊</b><small></small></button>
-          <button type="button" data-g="3" class="g3"><b>记得 →</b><small></small></button>
-          <button type="button" data-g="4" class="g4"><b>简单 ↑</b><small></small></button>
+        <div class="cd-rate" id="cd-rate">
+          <button type="button" data-g="1" class="cd-no"><span class="ico" aria-hidden="true">✕</span><b>不知道</b><small></small></button>
+          <button type="button" id="cd-flip" class="cd-flip">翻面<kbd>Space</kbd></button>
+          <button type="button" data-g="3" class="cd-yes"><span class="ico" aria-hidden="true">✓</span><b>记住了</b><small></small></button>
         </div>
+        <button type="button" id="cd-next" class="cd-next primary" hidden>下一张 →</button>
         <div class="cd-sub" id="cd-sub">
-          <button type="button" id="cd-flip" class="primary">看答案 <kbd>Space</kbd></button>
-          <button type="button" id="cd-speak">朗读 <kbd>R</kbd></button>
-          <button type="button" id="cd-undo">撤销 <kbd>Z</kbd></button>
-          <span class="cd-keys">看完答案：往右划 / <kbd>→</kbd> 记得，往左划 / <kbd>←</kbd> 忘了</span>
+          <button type="button" id="cd-speak" class="ghost">朗读 <kbd>R</kbd></button>
+          <button type="button" id="cd-undo" class="ghost">撤销 <kbd>Z</kbd></button>
+          <span class="cd-keys"><kbd>←</kbd> 不知道 · <kbd>→</kbd> 记住了 · <kbd>Space</kbd> 翻面 · <kbd>F</kbd> 收藏</span>
         </div>
         <div id="cd-done" class="cd-done" hidden></div>
       </div>

@@ -105,7 +105,7 @@
     orb.energy += (target - orb.energy) * 0.18;
     orb.kickV *= 0.92;
     const e = reduced ? orb.energy * 0.4 : orb.energy;
-    const col = orb.mode === 'listening' ? '251,191,36' : orb.mode === 'speaking' ? '94,234,212' : '132,148,164';
+    const col = orb.mode === 'listening' ? '151,98,9' : orb.mode === 'speaking' ? '181,80,43' : '122,104,84'; // --warm, --accent, --mute
 
     ctx.clearRect(0, 0, W, W);
     const g = ctx.createRadialGradient(C, C, R * 0.1, C, C, R * (1.1 + e * 0.5));
